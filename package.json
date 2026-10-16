@@ -1,0 +1,13 @@
+{
+  "name": "oldjzirt_log",
+  "version": "1.0.0",
+  "private": true,
+  "description": "oldjzirt shadow ledger: nightly crawl, replay prediction, settle, JSONL",
+  "scripts": {
+    "crawl": "node scripts/shadow_crawl.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}

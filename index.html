@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>真・自在律 シャドー台帳 成績</title>
+<style>
+  :root, html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0c0d11;
+    --panel: #15171e;
+    --panel-2: #1d2029;
+    --border: #2e3140;
+    --grid-line: #262a36;
+    --text: #eceae2;
+    --text-dim: #979aa6;
+    --accent: #ff4d6d;
+    --accent-2: #ffb62e;
+    --gold: #ffb62e;
+    --neon-a: #39ffb0;
+    --neon-b: #4dc3ff;
+    --tier-a: #2ecc71;
+    --tier-b: #4a90d9;
+    --tier-c: #6b6f7a;
+  }
+  html[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f2f1ec;
+    --panel: #ffffff;
+    --panel-2: #eceae2;
+    --border: #d5d2c6;
+    --grid-line: #ddd9cc;
+    --text: #1b1c22;
+    --text-dim: #6d707c;
+    --accent: #d92b4e;
+    --accent-2: #c07f00;
+    --gold: #c07f00;
+    --neon-a: #00b573;
+    --neon-b: #0077cc;
+    --tier-a: #1a9e57;
+    --tier-b: #2f6db0;
+    --tier-c: #8a8d97;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    max-width: 100%;
+    overflow-x: hidden;
+    transition: background 0.3s, color 0.3s;
+  }
+  .num { font-family: "SF Mono", "Roboto Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+  }
+  header h1 .brand {
+    display: inline-block;
+    background: linear-gradient(92deg, var(--text) 5%, var(--gold) 55%, var(--accent) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  header h1 .series {
+    display: block;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    color: var(--gold);
+    margin-top: 3px;
+  }
+  header .gg {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  #theme-toggle {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 4px; min-height: 40px; min-width: 44px; font-size: 18px; cursor: pointer;
+    margin-left: 10px; flex-shrink: 0;
+  }
+  main {
+    padding: 12px 12px 40px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  section { margin: 18px 0; }
+  h2 {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin: 0 0 8px;
+    text-transform: uppercase;
+  }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+  }
+  .stat .label { font-size: 11px; color: var(--text-dim); letter-spacing: 0.06em; }
+  .stat .value { font-size: 26px; font-weight: 800; margin-top: 2px; }
+  .stat .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 8px 6px;
+    text-align: right;
+    border-bottom: 1px solid var(--grid-line);
+    white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+    background: var(--panel-2);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .tier-tag {
+    display: inline-block;
+    min-width: 20px;
+    text-align: center;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0c0d11;
+  }
+  .tier-tag.A { background: var(--tier-a); }
+  .tier-tag.B { background: var(--tier-b); color: #fff; }
+  .tier-tag.C { background: var(--tier-c); color: #fff; }
+  .rec-pos { color: var(--neon-a); }
+  .rec-neg { color: var(--text-dim); }
+  .table-scroll { overflow-x: auto; }
+  .detail td { font-size: 12px; }
+  .hit-y { color: var(--neon-a); font-weight: 700; }
+  .hit-n { color: var(--text-dim); }
+  /* 直近明細: スプシ型（本物のtable。全列 左揃え＝字頭統一・薄い縦罫線） */
+  table.recent th, table.recent td {
+    text-align: left;
+    border-left: 1px solid var(--grid-line);
+    padding: 9px 10px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  table.recent th:first-child, table.recent td:first-child { border-left: none; }
+  table.recent th {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    background: var(--panel-2, transparent);
+  }
+  tr.rt-row { cursor: pointer; }
+  tr.rt-detail > td { padding: 0; border-left: none; }
+  .race-detail {
+    border-top: 1px dashed var(--grid-line, var(--border));
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .rd-row { margin: 4px 0; color: var(--text-dim); }
+  .rd-row b, .rd-row .num { color: var(--text); }
+  .bet-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .bet {
+    padding: 3px 8px;
+    border: 1px solid var(--grid-line, var(--border));
+    border-radius: 3px;
+    background: var(--panel-2, transparent);
+    letter-spacing: 0.08em;
+  }
+  .bet-hit {
+    border-color: var(--neon-a);
+    color: var(--neon-a);
+    font-weight: 700;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--neon-a) 35%, transparent);
+  }
+  .note {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin-top: 24px;
+  }
+  .loading, .error {
+    text-align: center;
+    padding: 40px 12px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .error { color: var(--accent); }
+  .subhead { font-size: 11px; color: var(--text-dim); margin: 0 0 8px; }
+
+  /* 直近レース：展開式カード */
+  .race-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .race-card > summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .race-card > summary::-webkit-details-marker { display: none; }
+  .race-card > summary .rc-date { color: var(--text-dim); min-width: 44px; }
+  .race-card > summary .rc-race { font-weight: 700; min-width: 30px; }
+  .race-card > summary .rc-spacer { flex: 1; }
+  .race-card > summary .rc-result {
+    font-size: 12px; font-weight: 700;
+    padding: 1px 8px; border-radius: 3px;
+  }
+  .race-card > summary .rc-result.y { background: color-mix(in srgb, var(--neon-a) 22%, transparent); color: var(--neon-a); }
+  .race-card > summary .rc-result.n { color: var(--text-dim); border: 1px solid var(--border); }
+  .race-card > summary .rc-chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.2s; }
+  .race-card[open] > summary .rc-chevron { transform: rotate(90deg); }
+  .rc-body {
+    padding: 4px 12px 12px;
+    border-top: 1px solid var(--grid-line);
+  }
+  .rc-finish {
+    font-size: 13px; margin: 8px 0;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  }
+  .rc-finish .lbl { color: var(--text-dim); font-size: 11px; }
+  .rc-boat {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 3px;
+    font-weight: 700; font-size: 13px;
+  }
+  .rc-boat.b1 { background: #f4f4f4; color: #1b1c22; }
+  .rc-boat.b2 { background: #333333; color: #fff; }
+  .rc-boat.b3 { background: #e0453f; color: #fff; }
+  .rc-boat.b4 { background: #3778c2; color: #fff; }
+  .rc-boat.b5 { background: #e0c62e; color: #1b1c22; }
+  .rc-boat.b6 { background: #3fae5c; color: #fff; }
+  .rc-boat.b7 { background: #f08a24; color: #1b1c22; }
+  .live-from { font-size: 12px; color: var(--text-dim); margin: 4px 0 0; }
+  .rc-arrow { color: var(--text-dim); font-size: 11px; }
+  .rc-bets {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px 8px;
+    margin: 8px 0;
+  }
+  .rc-bet {
+    font-size: 13px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    color: var(--text-dim);
+    border: 1px solid transparent;
+  }
+  .rc-bet.win {
+    color: var(--text);
+    font-weight: 700;
+    background: color-mix(in srgb, var(--neon-a) 16%, transparent);
+    border-color: color-mix(in srgb, var(--neon-a) 45%, transparent);
+  }
+  .rc-money {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-size: 12px; margin-top: 8px;
+    padding-top: 8px; border-top: 1px solid var(--grid-line);
+  }
+  .rc-money .k { color: var(--text-dim); }
+  .rc-money .v { font-weight: 700; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span class="brand">真・自在律</span><span class="series">シャドー台帳</span><span class="gg">成績 / ledger</span></h1>
+    <p class="live-from" id="live-from"></p>
+  </div>
+  <button id="theme-toggle" aria-label="テーマ切替">◐</button>
+</header>
+<main>
+  <div id="app"><div class="loading">シャドー台帳集計中…</div></div>
+</main>
+<script>
+  // ===== テーマ切替 =====
+  (function () {
+    if (typeof document === "undefined") return;
+    var root = document.documentElement;
+    var btn = document.getElementById("theme-toggle");
+    btn.addEventListener("click", function () {
+      root.setAttribute("data-theme", root.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    });
+  })();
+
+  // ===== 集計ロジック（node からも同一関数を呼べるよう純関数化） =====
+  var LedgerAgg = (function () {
+    // 台帳の開始日（稼働日）。YYYY-MM-DD。空文字のあいだは「稼働前」として何も集計しない。
+    var LIVE_FROM = "";
+
+    var TIERS = ["A", "B", "C"];
+    var GRADES = ["s-kyu", "a-kyu", "a-chal", "girls"];
+    var GRADE_LABEL = { "s-kyu": "S級", "a-kyu": "A級", "a-chal": "A級チャレンジ", "girls": "ガールズ" };
+    var WIND_BANDS = ["<1.5", "1.5-3", "3+"];
+
+    // 有効行: 予想（tier/tickets）があり、着順と二車単・三連単の払戻が確定している行
+    function validRows(records) {
+      var out = [];
+      for (var i = 0; i < records.length; i++) {
+        var o = records[i];
+        if (!o || o.skipped || TIERS.indexOf(o.tier) === -1 || !Array.isArray(o.tickets) || o.tickets.length === 0) continue;
+        if (!Array.isArray(o.finish) || o.finish.length < 3) continue;
+        if (!o.payouts || typeof o.payouts.sanrentan !== "number" || typeof o.payouts.nisyatan !== "number") continue;
+        out.push(o);
+      }
+      return out;
+    }
+
+    // 記録済みの hit_bets / stake / payout は使わず、着順・払戻・買い目から再計算する
+    function settle(o) {
+      var f = o.finish;
+      var payout = 0, hits = 0;
+      for (var i = 0; i < o.tickets.length; i++) {
+        var t = o.tickets[i], c = t.cars;
+        if (t.type === "sanrentan" && c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) { hits++; payout += o.payouts.sanrentan; }
+        else if (t.type === "nisyatan" && c[0] === f[0] && c[1] === f[1]) { hits++; payout += o.payouts.nisyatan; }
+      }
+      return { stake: o.tickets.length * 100, payout: payout, hit: hits > 0 };
+    }
+
+    function blank() { return { n: 0, hits: 0, stake: 0, payout: 0 }; }
+    function accum(b, s) {
+      b.n++;
+      b.stake += s.stake;
+      b.payout += s.payout;
+      if (s.hit) b.hits++;
+    }
+    function pct(a, b) { return b > 0 ? (a / b * 100) : 0; }
+    function windBand(v) {
+      if (typeof v !== "number") return "<1.5";
+      if (v < 1.5) return "<1.5";
+      if (v < 3) return "1.5-3";
+      return "3+";
+    }
+    function linesKey(n) { return typeof n === "number" ? (n >= 5 ? "5+" : String(n)) : "?"; }
+    function tierSet() { return { A: blank(), B: blank(), C: blank(), ALL: blank() }; }
+    function orderKey(o) {
+      return (o.date || "") + " " + (o.start_time || "99:99") + " " + (o.venue || "") + " " + ("0" + (o.race || 0)).slice(-2);
+    }
+
+    function compute(records, liveFrom) {
+      var from = (liveFrom === undefined) ? LIVE_FROM : liveFrom;
+      var rows = from ? validRows(records).filter(function (o) { return typeof o.date === "string" && o.date >= from; }) : [];
+      rows.sort(function (a, b) { var x = orderKey(a), y = orderKey(b); return x < y ? -1 : x > y ? 1 : 0; });
+
+      var byTier = tierSet();
+      var byMonth = {}, byGrade = {}, byLines = {}, byWind = {};
+      GRADES.forEach(function (g) { byGrade[g] = tierSet(); });
+      WIND_BANDS.forEach(function (w) { byWind[w] = tierSet(); });
+      var streak = {};
+      TIERS.concat(["ALL"]).forEach(function (t) { streak[t] = { max: 0, maxEnd: null, cur: 0 }; });
+      var minDate = null, maxDate = null;
+      var settled = [];
+
+      for (var i = 0; i < rows.length; i++) {
+        var o = rows[i], t = o.tier, s = settle(o);
+        settled.push({ o: o, s: s });
+        accum(byTier[t], s); accum(byTier.ALL, s);
+        var mk = o.date.slice(0, 7);
+        if (!byMonth[mk]) byMonth[mk] = tierSet();
+        accum(byMonth[mk][t], s); accum(byMonth[mk].ALL, s);
+        if (!byGrade[o.grade]) byGrade[o.grade] = tierSet();
+        accum(byGrade[o.grade][t], s); accum(byGrade[o.grade].ALL, s);
+        var lk = linesKey(o.num_lines);
+        if (!byLines[lk]) byLines[lk] = tierSet();
+        accum(byLines[lk][t], s); accum(byLines[lk].ALL, s);
+        var wb = windBand(o.wind && o.wind.eff_speed);
+        accum(byWind[wb][t], s); accum(byWind[wb].ALL, s);
+        [t, "ALL"].forEach(function (k) {
+          var st = streak[k];
+          if (s.hit) { st.cur = 0; }
+          else { st.cur++; if (st.cur > st.max) { st.max = st.cur; st.maxEnd = o.date; } }
+        });
+        if (!minDate || o.date < minDate) minDate = o.date;
+        if (!maxDate || o.date > maxDate) maxDate = o.date;
+      }
+
+      return {
+        rows: rows, byTier: byTier, byMonth: byMonth, byGrade: byGrade, byLines: byLines, byWind: byWind,
+        streak: streak, minDate: minDate, maxDate: maxDate, recent: settled.slice(-20).reverse()
+      };
+    }
+
+    return {
+      compute: compute, settle: settle, validRows: validRows, pct: pct, windBand: windBand,
+      LIVE_FROM: LIVE_FROM, TIERS: TIERS, GRADES: GRADES, GRADE_LABEL: GRADE_LABEL, WIND_BANDS: WIND_BANDS
+    };
+  })();
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = LedgerAgg;
+  }
+</script>
+<script>
+  // ===== データ取得 → 描画（ブラウザのみ） =====
+  (function () {
+    if (typeof document === "undefined") return;
+    var BASE = "https://raw.githubusercontent.com/Jiz41/oldjzirt_log/shadow-data/data/shadow/";
+    var A = LedgerAgg;
+    var pct = A.pct;
+
+    function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+    function fmtPct(v) { return v.toFixed(1) + "%"; }
+    function fmtYen(v) { return (v < 0 ? "-¥" : "¥") + Math.abs(v).toLocaleString("ja-JP"); }
+    function recClass(v) { return v >= 100 ? "rec-pos" : "rec-neg"; }
+    function tierTag(t) { return "<span class='tier-tag " + t + "'>" + t + "</span>"; }
+
+    document.getElementById("live-from").textContent = A.LIVE_FROM ? ("台帳開始日（稼働日）: " + A.LIVE_FROM) : "台帳開始日（稼働日）: 稼働前";
+
+    function monthList() {
+      if (!A.LIVE_FROM) return [];
+      var now = new Date();
+      var cy = now.getFullYear(), cm = now.getMonth() + 1;
+      var y = +A.LIVE_FROM.slice(0, 4), m = +A.LIVE_FROM.slice(5, 7);
+      var list = [];
+      while (y < cy || (y === cy && m <= cm)) {
+        list.push(y + ("0" + m).slice(-2));
+        m++; if (m > 12) { m = 1; y++; }
+      }
+      return list;
+    }
+
+    function parseJsonl(text) {
+      var out = [];
+      var lines = text.split("\n");
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i].trim();
+        if (!l) continue;
+        try { out.push(JSON.parse(l)); } catch (e) { /* 壊れた行は飛ばす */ }
+      }
+      return out;
+    }
+
+    function fetchAll() {
+      var records = [];
+      var chain = Promise.resolve();
+      monthList().forEach(function (mk) {
+        chain = chain.then(function () {
+          return fetch(BASE + mk + ".jsonl", { cache: "no-store" }).then(function (r) {
+            if (r.status === 404) { return; }
+            if (!r.ok) throw new Error("HTTP " + r.status + " (" + mk + ")");
+            return r.text().then(function (t) { records = records.concat(parseJsonl(t)); });
+          });
+        });
+      });
+      return chain.then(function () { return records; });
+    }
+
+    function tierRow(label, b) {
+      return "<tr><td>" + label + "</td>" +
+        "<td class='num'>" + b.n + "</td>" +
+        "<td class='num'>" + fmtPct(pct(b.hits, b.n)) + "</td>" +
+        "<td class='num " + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</td>" +
+        "<td class='num'>" + fmtYen(b.payout - b.stake) + "</td></tr>";
+    }
+
+    function cell(b) {
+      if (b.n === 0) return "<td class='num' style='color:var(--text-dim)'>—</td>";
+      return "<td class='num'>" + fmtPct(pct(b.hits, b.n)) + "<br><span class='" + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</span><br><span style='font-size:10px;color:var(--text-dim)'>n=" + b.n + "</span></td>";
+    }
+
+    function crossTable(title, sub, keyHead, keys, map, labelFn) {
+      var h = "<section><h2>" + title + "</h2><p class='subhead'>" + sub + "</p><div class='table-scroll'><table><thead><tr>" +
+        "<th>" + keyHead + "</th><th>A</th><th>B</th><th>C</th><th>全体</th></tr></thead><tbody>";
+      keys.forEach(function (k) {
+        var m = map[k];
+        if (!m) return;
+        h += "<tr><td>" + esc(labelFn ? labelFn(k) : k) + "</td>" + cell(m.A) + cell(m.B) + cell(m.C) + cell(m.ALL) + "</tr>";
+      });
+      return h + "</tbody></table></div></section>";
+    }
+
+    function render(d) {
+      var html = "";
+      var ov = d.byTier.ALL;
+      html += "<section><h2>総合サマリー</h2><div class='summary'>";
+      html += "<div class='stat'><div class='label'>的中率</div><div class='value num'>" + fmtPct(pct(ov.hits, ov.n)) + "</div><div class='sub'>" + ov.hits + " / " + ov.n + " レース的中</div></div>";
+      html += "<div class='stat'><div class='label'>回収率</div><div class='value num " + recClass(pct(ov.payout, ov.stake)) + "'>" + fmtPct(pct(ov.payout, ov.stake)) + "</div><div class='sub'>" + fmtYen(ov.payout) + " / " + fmtYen(ov.stake) + "</div></div>";
+      html += "<div class='stat'><div class='label'>レース数</div><div class='value num'>" + ov.n + "</div><div class='sub'>精算済み（A/B/C全て）</div></div>";
+      html += "<div class='stat'><div class='label'>期間</div><div class='value' style='font-size:14px'>" + esc((d.minDate || "?") + " 〜 " + (d.maxDate || "?")) + "</div><div class='sub'>シャドー台帳</div></div>";
+      html += "</div></section>";
+
+      html += "<section><h2>ティア別成績（全期間）</h2><div class='table-scroll'><table><thead><tr>" +
+        "<th>ティア</th><th>R数</th><th>的中率</th><th>回収率</th><th>損益</th></tr></thead><tbody>";
+      A.TIERS.forEach(function (t) { html += tierRow(tierTag(t), d.byTier[t]); });
+      html += tierRow("<b>全体</b>", ov);
+      html += "</tbody></table></div></section>";
+
+      html += crossTable("月別推移", "各セル: 的中率 / 回収率 / 件数", "月", Object.keys(d.byMonth).sort(), d.byMonth);
+      html += crossTable("級班別", "各セル: 的中率 / 回収率 / 件数", "級班", A.GRADES, d.byGrade, function (k) { return A.GRADE_LABEL[k] || k; });
+      html += crossTable("ライン数別", "各セル: 的中率 / 回収率 / 件数", "ライン", Object.keys(d.byLines).sort(), d.byLines, function (k) { return k + "分戦"; });
+      html += crossTable("実効風速帯別", "実効風速 = 風速 × バンクβ（m/s）", "風", A.WIND_BANDS, d.byWind, function (k) { return k + " m/s"; });
+
+      html += "<section><h2>連敗</h2><div class='table-scroll'><table><thead><tr><th>ティア</th><th>最大連敗</th><th>最大連敗の終了日</th><th>現在の連敗</th></tr></thead><tbody>";
+      A.TIERS.concat(["ALL"]).forEach(function (t) {
+        var s = d.streak[t];
+        html += "<tr><td>" + (t === "ALL" ? "<b>全体</b>" : tierTag(t)) + "</td><td class='num'>" + s.max + "</td><td class='num'>" + esc(s.maxEnd || "—") + "</td><td class='num'>" + s.cur + "</td></tr>";
+      });
+      html += "</tbody></table></div></section>";
+
+      html += "<section><h2>直近20レース</h2><div class='table-scroll'><table class='detail recent'><thead><tr>" +
+        "<th>日付</th><th>場</th><th>R</th><th>TIER</th><th>的中</th><th>払戻</th></tr></thead><tbody>";
+      d.recent.forEach(function (x, i) {
+        var o = x.o, s = x.s, f = o.finish;
+        var betsHtml = o.tickets.map(function (t) {
+          var c = t.cars;
+          var win = t.type === "sanrentan" ? (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) : (c[0] === f[0] && c[1] === f[1]);
+          return "<span class='bet num" + (win ? " bet-hit" : "") + "'>" + (t.type === "nisyatan" ? "2単 " : "3単 ") + esc(c.join("-")) + "</span>";
+        }).join("");
+        html += "<tr class='rt-row' data-rt='" + i + "'>" +
+          "<td>" + esc((o.date || "").slice(5)) + "</td>" +
+          "<td>" + esc(o.venue_name || o.venue || "") + "</td>" +
+          "<td class='num'>" + (o.race || "") + "R</td>" +
+          "<td>" + tierTag(o.tier) + "</td>" +
+          "<td class='" + (s.hit ? "hit-y" : "hit-n") + "'>" + (s.hit ? "的中" : "不的中") + "</td>" +
+          "<td class='num'>" + (s.hit ? fmtYen(s.payout) : "—") + "</td></tr>";
+        html += "<tr class='rt-detail' id='rt-detail-" + i + "' hidden><td colspan='6'><div class='race-detail'>" +
+          "<div class='rd-row'>結果: <b class='num'>" + esc(f.join("→")) + "</b>" + (o.kimarite ? "（" + esc(o.kimarite) + "）" : "") + "</div>" +
+          "<div class='rd-row'>買い目（三連単6点＋二車単2点）:</div><div class='bet-grid'>" + betsHtml + "</div>" +
+          "<div class='rd-row'>投資 <span class='num'>" + fmtYen(s.stake) + "</span> ／ 払戻 <span class='num'>" + fmtYen(s.payout) + "</span> ／ 回収 <span class='num " + (pct(s.payout, s.stake) >= 100 ? "hit-y" : "hit-n") + "'>" + fmtPct(pct(s.payout, s.stake)) + "</span></div>" +
+          "</div></td></tr>";
+      });
+      html += "</tbody></table></div></section>";
+
+      html += "<div class='note'>集計対象: 台帳開始日（稼働日）以降に毎晩自動取得した初見レースのみ。過去データの遡及再計算は含みません。<br>数値はシャドー台帳の自動集計による非公式値です。的中・回収は着順・払戻と買い目から再計算しており、記録済みの hit_bets / payout には依存していません。1レース最大800円（8点×100円）・実投票ではありません。</div>";
+
+      document.getElementById("app").innerHTML = html;
+      document.querySelectorAll("tr.rt-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          var el = document.getElementById("rt-detail-" + row.getAttribute("data-rt"));
+          if (el) el.hidden = !el.hidden;
+        });
+      });
+    }
+
+    if (!A.LIVE_FROM) {
+      document.getElementById("app").innerHTML = "<div class='loading'>稼働開始前です。</div>";
+      return;
+    }
+    fetchAll().then(function (records) {
+      var d = A.compute(records);
+      if (!d.rows.length) { document.getElementById("app").innerHTML = "<div class='loading'>稼働開始前です（精算済みのレースがまだありません）。</div>"; return; }
+      render(d);
+    }).catch(function (e) {
+      document.getElementById("app").innerHTML = "<div class='error'>集計に失敗しました: " + esc(e.message) + "</div>";
+    });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+name: shadow-crawl
+
+on:
+  schedule:
+    # JST 23:50。schedule は数十分遅れることがあるため、対象日は crawl 側で「JSTの(現在−2時間)の日付」を既定にしている
+    - cron: '50 14 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '対象日 YYYYMMDD（空なら JST の(現在−2時間)の日付）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shadow-crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout oldjzirt (engine)
+        uses: actions/checkout@v4
+        with:
+          repository: Jiz41/oldjzirt
+          path: oldjzirt
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Prepare shadow-data worktree
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin shadow-data; then
+            git fetch origin shadow-data
+            git worktree add -B shadow-data ledger origin/shadow-data
+          else
+            git worktree add --orphan -b shadow-data ledger
+          fi
+          mkdir -p ledger/data/shadow
+
+      - name: Run shadow crawl (target day + refill of last 3 days)
+        env:
+          INPUT_DATE: ${{ github.event.inputs.date }}
+        run: |
+          if [ -n "$INPUT_DATE" ]; then
+            node scripts/shadow_crawl.mjs --date "$INPUT_DATE" --out-dir ledger/data/shadow --oldjzirt-dir oldjzirt
+          else
+            node scripts/shadow_crawl.mjs --out-dir ledger/data/shadow --oldjzirt-dir oldjzirt
+          fi
+
+      - name: Commit and push shadow data
+        run: |
+          cd ledger
+          git add data/shadow
+          if git diff --cached --quiet; then
+            echo "差分なし。コミットをスキップします。"
+            exit 0
+          fi
+          STAMP=$(TZ=Asia/Tokyo date +%Y%m%d%H%M)
+          git commit -m "shadow: 台帳更新 ${STAMP} [skip ci]"
+          git push origin shadow-data
