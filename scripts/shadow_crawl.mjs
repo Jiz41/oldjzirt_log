@@ -29,6 +29,8 @@ const RESCAN_DAYS = 3;
 
 // ---------- paste-input.js 由来の対応表（同一内容） ----------
 
+const STYLE_MAP = { '逃': '逃', '自': '自', '追': '追' }; // paste-input.js と同一
+
 const SERIES_MAP = { 'S級': 's-kyu', 'A級': 'a-kyu', 'A級チャレンジ': 'a-chal', 'ガールズ': 'girls' };
 
 const BANK_NAME_MAP = {
@@ -382,6 +384,10 @@ export function buildFixture(data, raceId, compactDate) {
     if (rider.isScratched) continue;
     if (rider.score === null) return { skip: 'no_score' };
     let style = ['逃', '自', '追'].includes(rider.style) ? rider.style : null;
+    if (!style && rider.styleColumn && STYLE_MAP[rider.styleColumn]) {
+      // 決まり手から決まらないときだけ、出走表の脚質列を paste-input.js の STYLE_MAP で読み替えて採用（「両」等は対象外）
+      style = STYLE_MAP[rider.styleColumn];
+    }
     if (!style) {
       // 画面では脚質欄が未選択のまま → エンジンの InputGuard(getStyle) が "逃" を既定適用する
       style = '逃';

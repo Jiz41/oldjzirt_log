@@ -1,4 +1,4 @@
-// 複製元: /root/keirin-proxy/scraper.js（Jiz41 keirin-proxy）／複製日: 2026-10-16。改変なし。
+// 複製元: /root/keirin-proxy/scraper.js（Jiz41 keirin-proxy）／複製日: 2026-10-16。改変: 出走表の脚質列(td[7])を rider.styleColumn として追加で返す（それ以外は原本どおり）。
 const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 
@@ -267,7 +267,8 @@ async function scrapeRace(raceId) {
           name: '', pref: null, age: null, term: null,
           grade: '', style: null, styleWarn: false,
           gear: null, score: null, isScratched: isScratched,
-          sCount: null, bCount: null, recent3: null, comment: null
+          sCount: null, bCount: null, recent3: null, comment: null,
+          styleColumn: null
       };
 
       try {
@@ -294,6 +295,7 @@ async function scrapeRace(raceId) {
                 rider.name = nameCellText.replace(/\s+/g, ' ').trim();
             }
             rider.grade = tds[6 + indexOffset] ? $(tds[6 + indexOffset]).text().trim() : '';
+            rider.styleColumn = tds[7 + indexOffset] ? ($(tds[7 + indexOffset]).text().trim() || null) : null;
             const kimatete = {
               '逃': parseInt($(tds[12 + indexOffset]).text().trim(), 10) || 0,
               '捲': parseInt($(tds[13 + indexOffset]).text().trim(), 10) || 0,
