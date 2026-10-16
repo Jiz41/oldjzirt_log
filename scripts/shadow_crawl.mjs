@@ -370,7 +370,7 @@ export async function fetchWind(bankName, compactDate, startTime) {
 
 // ---------- 脚質の決定（利用者の運用ルール） ----------
 // (1) 直近4か月の決まり手回数で決める: 逃→逃、捲→自、差とマークの多い方→追。単独最多なら採用（scraper.js resolveStyle と同じ）。
-// (2) 全部0回 → 決められない（レースごと style_undetermined で skipped）。
+// (2) 全部0回 → (3)と同じ位置規則で決める（候補の制限なし）。並びに居ない等で決まらなければ style_undetermined。
 // (3) 最多が同数 → 並び予想の位置で決める（同数の候補に含まれる場合のみ採用）:
 //     ライン2番手以降→追／ライン先頭→前の方のラインなら逃・後ろの方なら自／単騎→前の方なら追・後ろの方なら自。
 // (4) それでも決まらない → style_ambiguous で skipped。
@@ -416,15 +416,15 @@ export function decideStyle(k, pos, boundary = STYLE_BOUNDARY) {
   if (!k) return { style: null, how: 'no_counts' };
   const g = { 逃: k.逃 || 0, 自: k.捲 || 0, 追: Math.max(k.差 || 0, k.マ || 0) };
   const max = Math.max(g.逃, g.自, g.追);
-  if (max === 0) return { style: null, how: 'all_zero' };
   const tied = Object.keys(g).filter((x) => g[x] === max);
-  if (tied.length === 1) return { style: tied[0], how: 'counts' };
-  if (!pos) return { style: null, how: 'ambiguous', tied };
+  if (max > 0 && tied.length === 1) return { style: tied[0], how: 'counts' };
+  if (!pos) return { style: null, how: max === 0 ? 'all_zero' : 'ambiguous', tied };
   const front = BOUNDARIES[boundary](pos.lineIdx, pos.numLines);
   let want;
   if (pos.lineSize >= 2 && pos.idxInLine >= 1) want = '追';
   else if (pos.lineSize >= 2) want = front ? '逃' : '自';
   else want = front ? '追' : '自';
+  if (max === 0) return { style: want, how: 'position', tied: [] }; // 全0は候補が無いので位置の結果をそのまま採用
   if (tied.includes(want)) return { style: want, how: 'position', tied };
   return { style: null, how: 'ambiguous', tied, want };
 }
