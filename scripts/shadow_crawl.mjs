@@ -125,6 +125,7 @@ export class HttpAbort extends Error {}
 
 let lastRequestAt = 0;
 let consecutiveBad = 0;
+let requestCount = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const realFetch = require('node-fetch');
@@ -137,6 +138,7 @@ export async function politeFetch(url, opts = {}) {
     const wait = lastRequestAt + HTTP_INTERVAL_MS - Date.now();
     if (wait > 0) await sleep(wait);
     lastRequestAt = Date.now();
+    requestCount++;
     try {
       res = await realFetch(url, { timeout: 30000, ...opts, headers });
       break;
@@ -437,6 +439,67 @@ export function linePositions(lines) {
   return pos;
 }
 
+// ---------- WINTICKET の予想印（W印の自動入力） ----------
+// 利用者は手入力時代、WINTICKET の予想印を見て W印を付けていた。レースページ埋め込みの
+// window.__PRELOADED_STATE__ から 車番→predictionMark（数字）だけを取り出す（コメント等は読まない・残さない）。
+// URL は kdreams の raceId から組み立てる: cupId = 開催初日YYYYMMDD + 場コード、日目、R（場コードは両サイト共通）。
+const WT_SLUG_OVERRIDE = { '13': 'iwakidaira' }; // WINTICKET 側の slug が kdreams と違う場
+// 予想印の数字 → W印。ゲートCの実データ（利用者の過去入力との混同行列）で決めた対応。
+export const WM_MAP = { 1: '◎', 2: '〇', 3: '△', 4: '✕' };
+
+export function extractPreloadedState(html) {
+  const i = html.indexOf('__PRELOADED_STATE__');
+  if (i < 0) return null;
+  const start = html.indexOf('{', i);
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let j = start; j < html.length; j++) {
+    const c = html[j];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(html.slice(start, j + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+export function winticketUrl(raceId) {
+  const code = raceId.slice(0, 2);
+  const slug = WT_SLUG_OVERRIDE[code] || SLUG_BY_CODE[code];
+  return `https://www.winticket.jp/keirin/${slug}/racecard/${raceId.slice(2, 10)}${code}/${parseInt(raceId.slice(10, 12), 10)}/${parseInt(raceId.slice(-2), 10)}`;
+}
+
+// 戻り値: { 車番: 印の数字 } または null（取れない・印が無い）
+export async function fetchWinticketMarks(raceId) {
+  const res = await politeFetch(winticketUrl(raceId), { headers: { Accept: 'text/html', 'Accept-Language': 'ja-JP' } });
+  if (!res.ok) return null;
+  const st = extractPreloadedState(await res.text());
+  const qs = st && st.tanStackQuery && Array.isArray(st.tanStackQuery.queries) ? st.tanStackQuery.queries : [];
+  const q = qs.find((x) => Array.isArray(x.queryKey) && x.queryKey[0] === 'keirin/race/common');
+  const d = q && q.state && q.state.data;
+  if (!d || !Array.isArray(d.entries) || !Array.isArray(d.records)) return null;
+  const byPlayer = new Map(d.records.map((r) => [r.playerId, r.predictionMark]));
+  const out = {};
+  let any = false;
+  for (const e of d.entries) {
+    if (e.absent) continue;
+    const m = byPlayer.get(e.playerId);
+    out[e.number] = typeof m === 'number' ? m : null;
+    if (typeof m === 'number' && m > 0) any = true;
+  }
+  return any ? out : null;
+}
+
 // ---------- scrapeRace → エンジン入力（paste-input.js applyRaceData と同一規則） ----------
 
 export function buildFixture(data, raceId, compactDate) {
@@ -504,7 +567,7 @@ export function buildFixture(data, raceId, compactDate) {
       score: Math.min(130, Math.max(0, rider.score)),
       recent,
       style,
-      wmark: '無', // paste-input はレース読み込み毎に W印を「無」へ戻す
+      wmark: '無', // 既定は「無」。WINTICKET の予想印が取れたら crawlRace で上書きする
       isLocal,
       isGoldCap: false,
       // 以下はエンジン入力ではなく記録用
@@ -674,6 +737,18 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     };
   }
   const fx = built.fixture;
+  let wmRaw = null;
+  try {
+    wmRaw = await fetchWinticketMarks(raceId);
+  } catch (err) {
+    if (err instanceof HttpAbort) throw err;
+    wmRaw = null;
+  }
+  if (wmRaw) {
+    for (const p of fx.players) p.wmark = WM_MAP[wmRaw[p.id]] || '無';
+  } else {
+    built.warnings.push('wmark_unavailable');
+  }
   let wind;
   if (opts.windOverride) wind = opts.windOverride;
   else wind = await fetchWind(fx.bankName, compactDate, result.startTime);
@@ -708,6 +783,7 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
       term: p._meta.term,
       grade: p._meta.grade,
     })),
+    wm_raw: wmRaw,
     s1_id: fx.radio.s1Id,
     b1_id: fx.radio.b1Id,
     labelToCar: pred.labelToCar,
@@ -851,6 +927,7 @@ async function main() {
     console.log('shadow_crawl:', JSON.stringify(st));
   }
 
+  console.log('HTTPリクエスト数:', requestCount);
   const t = allStats[allStats.length - 1];
   if (t.races_listed > 0 && t.scraped === 0) {
     console.error('失敗: 開催があるのに1レースも取得できませんでした。何も書きません。');
