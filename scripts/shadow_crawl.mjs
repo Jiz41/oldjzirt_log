@@ -29,8 +29,6 @@ const RESCAN_DAYS = 3;
 
 // ---------- paste-input.js 由来の対応表（同一内容） ----------
 
-const STYLE_MAP = { '逃': '逃', '自': '自', '追': '追' }; // paste-input.js と同一
-
 const SERIES_MAP = { 'S級': 's-kyu', 'A級': 'a-kyu', 'A級チャレンジ': 'a-chal', 'ガールズ': 'girls' };
 
 const BANK_NAME_MAP = {
@@ -130,6 +128,7 @@ let consecutiveBad = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const realFetch = require('node-fetch');
+const racecardHtml = new Map();
 
 export async function politeFetch(url, opts = {}) {
   const headers = { 'User-Agent': USER_AGENT, ...(opts.headers || {}) };
@@ -145,6 +144,13 @@ export async function politeFetch(url, opts = {}) {
       // 通信断・タイムアウトは1回だけ再試行（間隔は通常どおり3秒以上空く）
       if (attempt >= 1) throw err;
     }
+  }
+  // 出走表（racedetail、pageType無し）の本文を控える。決まり手回数は vendor の scraper.js が外へ出さないため、
+  // 同じHTMLを shadow_crawl 側で読む（追加のHTTPは出さない）。
+  if (/\/racedetail\/\d+\/$/.test(url) && res.ok) {
+    const body = await res.text();
+    racecardHtml.set(url, body);
+    res = new realFetch.Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
   }
   const s = res.status;
   if (s === 403 || s === 429) {
@@ -165,6 +171,7 @@ const nodeFetchPath = require.resolve('node-fetch');
 require(nodeFetchPath);
 require.cache[nodeFetchPath].exports = Object.assign(politeFetch, realFetch);
 const { getKaisai } = require('./vendor/kaisai.js');
+const cheerio = require('cheerio');
 const { scrapeRace } = require('./vendor/scraper.js');
 
 // scraper.js の VENUE_MAP と同一（結果ページURL用）
@@ -361,6 +368,75 @@ export async function fetchWind(bankName, compactDate, startTime) {
   return { speed, direction: speed < 1.0 ? 'none' : degToDirection(deg), source: 'open-meteo', hour: target };
 }
 
+// ---------- 脚質の決定（利用者の運用ルール） ----------
+// (1) 直近4か月の決まり手回数で決める: 逃→逃、捲→自、差とマークの多い方→追。単独最多なら採用（scraper.js resolveStyle と同じ）。
+// (2) 全部0回 → 決められない（レースごと style_undetermined で skipped）。
+// (3) 最多が同数 → 並び予想の位置で決める（同数の候補に含まれる場合のみ採用）:
+//     ライン2番手以降→追／ライン先頭→前の方のラインなら逃・後ろの方なら自／単騎→前の方なら追・後ろの方なら自。
+// (4) それでも決まらない → style_ambiguous で skipped。
+// 前/後ろの境目（ライン順位 r=0始まり, ライン数 L）。過去の利用者入力との一致で選んだ案を STYLE_BOUNDARY に置く。
+export const BOUNDARIES = {
+  half_floor: (r, L) => r < Math.floor(L / 2), // 前半（奇数の真ん中は後ろ）
+  half_ceil: (r, L) => r < Math.ceil(L / 2),   // 前半（奇数の真ん中は前）
+  first_only: (r) => r === 0,                  // 先頭ラインだけ前
+  all_but_last: (r, L) => r < L - 1,           // 最後のラインだけ後ろ
+};
+export const STYLE_BOUNDARY = 'first_only'; // ゲートC 60件の同数29人で一致が最多（14/21）。標本が小さいので要再評価
+
+// 出走表HTMLから 車番→{逃,捲,差,マ}（scraper.js と同じ表・同じ列: td[12..15]+indexOffset）
+export function parseKimarite(html) {
+  const $ = cheerio.load(html);
+  const map = {};
+  let raceTable = null;
+  $('table').each((i, table) => {
+    const thText = $(table).find('th').first().text();
+    if (thText.includes('予想') && !thText.includes('周回')) { raceTable = table; return false; }
+  });
+  if (!raceTable) return map;
+  $(raceTable).find('tbody tr').each((i, el) => {
+    if ($(el).text().includes('誘導員')) return;
+    const tds = $(el).find('td');
+    if (tds.length === 0) return;
+    const off = tds.length <= 22 ? -1 : 0;
+    let number = null;
+    const n = parseInt($(tds[4 + off]).text().trim(), 10);
+    if (!isNaN(n) && n > 0 && n < 10) number = n;
+    if (number === null) {
+      tds.each((j, td) => { const t = $(td).text().trim(); if (/^[1-9]$/.test(t)) { number = parseInt(t, 10); return false; } });
+    }
+    if (number === null) return;
+    const v = (k) => parseInt($(tds[k + off]).text().trim(), 10) || 0;
+    map[number] = { 逃: v(12), 捲: v(13), 差: v(14), マ: v(15) };
+  });
+  return map;
+}
+
+// pos: { lineIdx, idxInLine, lineSize, numLines } または null
+export function decideStyle(k, pos, boundary = STYLE_BOUNDARY) {
+  if (!k) return { style: null, how: 'no_counts' };
+  const g = { 逃: k.逃 || 0, 自: k.捲 || 0, 追: Math.max(k.差 || 0, k.マ || 0) };
+  const max = Math.max(g.逃, g.自, g.追);
+  if (max === 0) return { style: null, how: 'all_zero' };
+  const tied = Object.keys(g).filter((x) => g[x] === max);
+  if (tied.length === 1) return { style: tied[0], how: 'counts' };
+  if (!pos) return { style: null, how: 'ambiguous', tied };
+  const front = BOUNDARIES[boundary](pos.lineIdx, pos.numLines);
+  let want;
+  if (pos.lineSize >= 2 && pos.idxInLine >= 1) want = '追';
+  else if (pos.lineSize >= 2) want = front ? '逃' : '自';
+  else want = front ? '追' : '自';
+  if (tied.includes(want)) return { style: want, how: 'position', tied };
+  return { style: null, how: 'ambiguous', tied, want };
+}
+
+export function linePositions(lines) {
+  const pos = {};
+  lines.forEach((line, li) => line.forEach((car, i) => {
+    pos[car] = { lineIdx: li, idxInLine: i, lineSize: line.length, numLines: lines.length };
+  }));
+  return pos;
+}
+
 // ---------- scrapeRace → エンジン入力（paste-input.js applyRaceData と同一規則） ----------
 
 export function buildFixture(data, raceId, compactDate) {
@@ -377,22 +453,28 @@ export function buildFixture(data, raceId, compactDate) {
   const activeNos = new Set(activeRiders.map((r) => r.number));
   const warnings = [];
   const players = [];
+
+  if (!(data.lineup && data.lineup.source === 'official' && Array.isArray(data.lineup.lines))) {
+    return { skip: 'no_lineup' };
+  }
+  const lines = data.lineup.lines.map((l) => l.filter((no) => activeNos.has(no))).filter((l) => l.length > 0);
+  if (lines.length === 0) return { skip: 'no_lineup' };
+  const positions = linePositions(lines);
+  const kimarite = data.kimarite || {};
+  const styleSkips = [];
   let sBestNo = null, sBestVal = -Infinity, sTie = false;
   let bBestNo = null, bBestVal = -Infinity, bTie = false;
 
   for (const rider of data.riders) {
     if (rider.isScratched) continue;
     if (rider.score === null) return { skip: 'no_score' };
-    let style = ['逃', '自', '追'].includes(rider.style) ? rider.style : null;
-    if (!style && rider.styleColumn && STYLE_MAP[rider.styleColumn]) {
-      // 決まり手から決まらないときだけ、出走表の脚質列を paste-input.js の STYLE_MAP で読み替えて採用（「両」等は対象外）
-      style = STYLE_MAP[rider.styleColumn];
+    const ds = decideStyle(kimarite[rider.number], positions[rider.number] || null);
+    if (!ds.style) {
+      styleSkips.push({ car: rider.number, how: ds.how });
+      continue;
     }
-    if (!style) {
-      // 画面では脚質欄が未選択のまま → エンジンの InputGuard(getStyle) が "逃" を既定適用する
-      style = '逃';
-      warnings.push(`style_fallback:${rider.number}`);
-    }
+    const style = ds.style;
+    if (ds.how === 'position') warnings.push(`style_by_position:${rider.number}`);
     let recent;
     if (rider.recent3 !== null && rider.recent3 !== undefined) {
       recent = String(rider.recent3).replace(/[^0-9]/g, '9');
@@ -429,14 +511,14 @@ export function buildFixture(data, raceId, compactDate) {
       _meta: { sCount: rider.sCount, bCount: rider.bCount, age: rider.age, term: rider.term, grade: rider.grade, recent3: rider.recent3 },
     });
   }
+  if (styleSkips.length > 0) {
+    // 全0が1人でもいれば style_undetermined、それ以外は style_ambiguous
+    const reason = styleSkips.some((x) => x.how === 'all_zero' || x.how === 'no_counts') ? 'style_undetermined' : 'style_ambiguous';
+    return { skip: reason, styleSkips };
+  }
   if (sTie) warnings.push('s1_tie');
   if (bTie) warnings.push('b1_tie');
 
-  if (!(data.lineup && data.lineup.source === 'official' && Array.isArray(data.lineup.lines))) {
-    return { skip: 'no_lineup' };
-  }
-  const lines = data.lineup.lines.map((l) => l.filter((no) => activeNos.has(no))).filter((l) => l.length > 0);
-  if (lines.length === 0) return { skip: 'no_lineup' };
   const lineInput = lines.map((l) => l.join('')).join(',');
 
   return {
@@ -573,13 +655,22 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     return { rec: { ...base, skipped: 'racecard_unavailable', crawled_at: new Date().toISOString() }, scraped: false };
   }
   base.venue_name = data.venue || null;
+  const slugForCard = SLUG_BY_CODE[raceId.slice(0, 2)];
+  const cardHtml = racecardHtml.get(`https://keirin.kdreams.jp/${slugForCard}/racedetail/${raceId}/`);
+  racecardHtml.clear();
+  data.kimarite = cardHtml ? parseKimarite(cardHtml) : {};
   const built = buildFixture(data, raceId, compactDate);
   const result = await fetchResult(raceId);
 
   if (built.skip) {
     return {
-      rec: { ...base, grade: SERIES_MAP[data.series] || null, skipped: built.skip, finish: result.finish, crawled_at: new Date().toISOString() },
+      rec: {
+        ...base, grade: SERIES_MAP[data.series] || null, skipped: built.skip,
+        ...(built.styleSkips ? { style_skips: built.styleSkips } : {}),
+        finish: result.finish, crawled_at: new Date().toISOString(),
+      },
       scraped: true,
+      data,
     };
   }
   const fx = built.fixture;
@@ -631,7 +722,7 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     payouts: result.payouts,
   };
   Object.assign(rec, settle(rec), { crawled_at: new Date().toISOString() });
-  return { rec, scraped: true, fixture: fx };
+  return { rec, scraped: true, fixture: fx, data };
 }
 
 // ---------- 台帳 I/O ----------

@@ -7,7 +7,7 @@
 | パス | 役割 |
 |---|---|
 | `scripts/shadow_crawl.mjs` | 収集器。開催一覧→出走表→エンジン実行→判定・買い目→結果ページ→精算→JSONL |
-| `scripts/vendor/kaisai.js`, `scripts/vendor/scraper.js` | keirin-proxy からの複製（scraper.js のみ脚質列 styleColumn を追加。出典・複製日・改変点は各ファイル先頭） |
+| `scripts/vendor/kaisai.js`, `scripts/vendor/scraper.js` | keirin-proxy からの複製（改変なし。出典・複製日は各ファイル先頭） |
 | `.github/workflows/shadow-crawl.yml` | 毎日 JST 23:50 に実行し、`shadow-data` ブランチへ追記 |
 | `index.html` | 成績ページ。`shadow-data` の JSONL を raw.githubusercontent.com から読む |
 
@@ -19,6 +19,10 @@
 - 稼働日は `index.html` の `LIVE_FROM` 定数1か所で管理します（空のあいだは「稼働前」表示）。
 - 同じ日付・場・レースの行は置換され、重複しません。結果未確定のレースは `finish:null` で書き、翌日以降の実行（直近3日を再走査）で埋めます。
 - 書き込み先は `data/shadow/YYYYMM.jsonl`（出走日の月）。
+
+## 脚質の決め方
+
+直近4か月の決まり手回数で単独最多の脚質（逃→逃、捲→自、差・マの多い方→追）。全部0回の選手がいるレースは `style_undetermined`、最多が同数なら並び予想の位置で決め（番手以降→追、ライン先頭→前なら逃・後ろなら自、単騎→前なら追・後ろなら自。前後の境目は `STYLE_BOUNDARY`）、それでも決まらなければ `style_ambiguous` として予想を出さずに記録します。
 
 ## 載せない項目（公開リポジトリのため）
 
