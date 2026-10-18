@@ -644,7 +644,8 @@ export async function predict(oj, fixture) {
     top3CarIds,
     lCarId,
   });
-  const tickets = DC.buildTickets(labelToCar);
+  const tickets = DC.buildTickets(labelToCar, lines);
+  const o1Tail = typeof DC.isTailOfThreeCarLine === 'function' ? DC.isTailOfThreeCarLine(lines, labelToCar.o1) : null;
 
   const windSpeed = fixture.wind.speed || 0;
   const beta = snap.bank && snap.bank.beta ? snap.bank.beta : 1.0;
@@ -672,6 +673,7 @@ export async function predict(oj, fixture) {
     ranked,
     eff_speed: Math.round(effWindSpeed * 1000) / 1000,
     num_lines: numLines,
+    o1_tail: o1Tail,
   };
 }
 
@@ -796,6 +798,7 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     finish: result.finish,
     kimarite: result.kimarite,
     payouts: result.payouts,
+    o1_tail: pred.o1_tail,
   };
   Object.assign(rec, settle(rec), { crawled_at: new Date().toISOString() });
   return { rec, scraped: true, fixture: fx, data };
