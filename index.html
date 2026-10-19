@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Elder Sign Note — Sin jzirt 台帳</title>
+<title>Elder Sign's Note</title>
 <style>
   :root, html[data-theme="dark"] {
     color-scheme: dark;
@@ -64,34 +64,40 @@
   }
   header h1 {
     margin: 0;
-    font-size: 32px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    line-height: 1.2;
+    font-family: "Times New Roman", Georgia, "Hiragino Mincho ProN", "Noto Serif JP", serif;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
   }
   header h1 .brand {
     display: inline-block;
-    background: linear-gradient(92deg, var(--text) 5%, #d4a843 45%, #c0392b 95%);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: lowercase;
+  }
+  header h1 .brand b {
+    font-size: 44px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: linear-gradient(180deg, #f1d58a 10%, #d4a843 55%, #8a5a1c 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
     color: transparent;
+    filter: drop-shadow(0 0 6px rgba(212, 168, 67, 0.35));
   }
+  header h1 .brand i { font-style: normal; font-size: 8px; letter-spacing: 0.1em; }
   header h1 .series {
     display: block;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 0.28em;
-    color: var(--gold);
-    margin-top: 3px;
-  }
-  header .gg {
-    display: block;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
+    font-size: 10px;
+    font-weight: 400;
+    font-style: italic;
+    letter-spacing: 0.3em;
     color: var(--text-dim);
-    margin-top: 4px;
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
   }
   #theme-toggle {
     background: var(--panel); border: 1px solid var(--border); color: var(--text);
@@ -369,7 +375,7 @@
 <body>
 <header>
   <div>
-    <h1><span class="brand">Elder Sign Note</span><span class="series">Sin jzirt 台帳</span><span class="gg">成績 / ledger</span></h1>
+    <h1 aria-label="Elder Sign's Note"><span class="brand" aria-hidden="true"><b>E</b>lder <b>S</b>ign<i>'s</i> <b>N</b>ote</span><span class="series">A Dark Chamber for Recording Sin &quot;J&quot;</span></h1>
     <p class="live-from" id="live-from"></p>
   </div>
   <button id="theme-toggle" aria-label="テーマ切替">◐</button>
