@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>真・自在律 シャドー台帳 成績</title>
+<title>Elder Sign Note — Sin jzirt 台帳</title>
 <style>
   :root, html[data-theme="dark"] {
     color-scheme: dark;
@@ -224,6 +224,68 @@
   .error { color: var(--accent); }
   .subhead { font-size: 11px; color: var(--text-dim); margin: 0 0 8px; }
 
+  /* タブ切替 */
+  .filter-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin: 10px 0 2px; font-size: 12px; color: var(--text-dim);
+  }
+  .filter-bar select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 4px; padding: 6px 8px; font-size: 12px;
+  }
+  .filter-note { font-size: 11px; color: var(--accent-2); width: 100%; }
+  .tabbar {
+    display: flex; gap: 2px; margin: 14px 0 0; border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .tab-btn {
+    background: none; border: none; color: var(--text-dim);
+    padding: 10px 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.03em;
+    cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap;
+    min-height: 40px;
+  }
+  .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .tab-panel { display: none; padding-top: 6px; }
+  .tab-panel.active { display: block; }
+
+  .sortable { cursor: pointer; user-select: none; }
+  .sortable:hover { color: var(--gold); }
+  .sort-icon { font-size: 9px; opacity: 0.6; margin-left: 3px; }
+  .sparse td, td.sparse, tr.sparse td { opacity: 0.45; }
+  .footnote { font-size: 11px; color: var(--text-dim); margin: 8px 0 0; line-height: 1.6; }
+
+  .chart-wrap {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+    padding: 10px; overflow-x: auto;
+  }
+  .cal-month { margin-bottom: 14px; }
+  .cal-month h3 { font-size: 12px; color: var(--text-dim); margin: 0 0 6px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-dow { font-size: 10px; color: var(--text-dim); text-align: center; }
+  .cal-cell {
+    aspect-ratio: 1; border-radius: 3px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; background: var(--panel-2); color: var(--text-dim);
+    font-size: 10px;
+  }
+  .cal-cell.empty { background: transparent; }
+  .cal-cell.win { background: color-mix(in srgb, var(--neon-a) 32%, transparent); color: var(--text); }
+  .cal-cell.lose { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
+  .cal-cell .d { font-size: 10px; opacity: 0.8; }
+  .cal-cell .p { font-size: 9px; font-weight: 700; }
+
+  .highlight-list { list-style: none; padding: 0; margin: 0; }
+  .highlight-list li {
+    padding: 8px 0; border-bottom: 1px solid var(--grid-line); font-size: 13px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .highlight-list li:last-child { border-bottom: none; }
+  .highlight-list .hl-main { color: var(--text-dim); }
+  .record-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .record-filters select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    border-radius: 4px; padding: 6px 8px; font-size: 12px;
+  }
+
   /* 直近レース：展開式カード */
   .race-card {
     background: var(--panel);
@@ -307,7 +369,7 @@
 <body>
 <header>
   <div>
-    <h1><span class="brand">真・自在律</span><span class="series">シャドー台帳</span><span class="gg">成績 / ledger</span></h1>
+    <h1><span class="brand">Elder Sign Note</span><span class="series">Sin jzirt 台帳</span><span class="gg">成績 / ledger</span></h1>
     <p class="live-from" id="live-from"></p>
   </div>
   <button id="theme-toggle" aria-label="テーマ切替">◐</button>
@@ -330,11 +392,25 @@
   var LedgerAgg = (function () {
     // 台帳の開始日（稼働日）。YYYY-MM-DD。空文字のあいだは「稼働前」として何も集計しない。
     var LIVE_FROM = "2026-10-16";
+    // 新8点買い目（s1-s2-s3 等）での記録に切り替わった日。これより前は旧買い目(o1頭中心)で記録されている（10/19分は切替前に取得済みのため旧買い目のまま）。
+    var NEW8_FROM = "2026-10-20";
 
     var TIERS = ["A", "B", "C"];
     var GRADES = ["s-kyu", "a-kyu", "a-chal", "girls"];
     var GRADE_LABEL = { "s-kyu": "S級", "a-kyu": "A級", "a-chal": "A級チャレンジ", "girls": "ガールズ" };
     var WIND_BANDS = ["<1.5", "1.5-3", "3+"];
+    var LABELS = ["s1", "s2", "s3", "L", "o1"];
+    // 新8点の固定定義（ラベル→labelToCarで車番化して精算する。記録済みticketsは使わない）
+    var NEW8_TICKETS = [
+      { key: "s1-s2-s3", type: "sanrentan", labs: ["s1", "s2", "s3"] },
+      { key: "s1-s2-L", type: "sanrentan", labs: ["s1", "s2", "L"] },
+      { key: "s2-s1-s3", type: "sanrentan", labs: ["s2", "s1", "s3"] },
+      { key: "s1-s3-s2", type: "sanrentan", labs: ["s1", "s3", "s2"] },
+      { key: "s1-L-s2", type: "sanrentan", labs: ["s1", "L", "s2"] },
+      { key: "s1-L-s3", type: "sanrentan", labs: ["s1", "L", "s3"] },
+      { key: "s2-s1", type: "nisyatan", labs: ["s2", "s1"] },
+      { key: "s2-s3", type: "nisyatan", labs: ["s2", "s3"] }
+    ];
 
     // 有効行: 予想（tier/tickets）があり、着順と二車単・三連単の払戻が確定している行
     function validRows(records) {
@@ -424,9 +500,155 @@
       };
     }
 
+    // ===== 4タブ集計用の追加関数（すべて純関数。node から require 可） =====
+
+    // タブ共通の行取得: liveFrom以降 ＋（newOnly指定時）新8点記録日以降
+    function filterRows(records, liveFrom, newOnly) {
+      var from = (liveFrom === undefined) ? LIVE_FROM : liveFrom;
+      var rows = from ? validRows(records).filter(function (o) { return typeof o.date === "string" && o.date >= from; }) : [];
+      if (newOnly) rows = rows.filter(function (o) { return o.date >= NEW8_FROM; });
+      rows.sort(function (a, b) { var x = orderKey(a), y = orderKey(b); return x < y ? -1 : x > y ? 1 : 0; });
+      return rows;
+    }
+
+    // 汎用の単純クロス集計（キー→{n,hits,stake,payout}）。order は初出順の配列。
+    function simpleCross(rows, keyFn) {
+      var map = {}, order = [];
+      rows.forEach(function (o) {
+        var k = keyFn(o);
+        if (k === null || k === undefined) return;
+        if (!map[k]) { map[k] = blank(); order.push(k); }
+        accum(map[k], settle(o));
+      });
+      return { map: map, order: order };
+    }
+
+    // 場別集計（venue_name付き）
+    function byVenueAgg(rows) {
+      var map = {}, order = [];
+      rows.forEach(function (o) {
+        var k = o.venue || "?";
+        if (!map[k]) { map[k] = { venue: k, venue_name: o.venue_name || k, n: 0, hits: 0, stake: 0, payout: 0 }; order.push(k); }
+        var s = settle(o);
+        map[k].n++; map[k].stake += s.stake; map[k].payout += s.payout; if (s.hit) map[k].hits++;
+      });
+      return { map: map, order: order };
+    }
+
+    // A(s1)/B(s2)/C(s3)/L/o1 が 1着/2着/3着/圏外 のどこに入ったか
+    function abcDist(rows) {
+      var dist = {};
+      LABELS.forEach(function (l) { dist[l] = { 1: 0, 2: 0, 3: 0, other: 0, n: 0 }; });
+      rows.forEach(function (o) {
+        var f = o.finish, lc = o.labelToCar || {};
+        LABELS.forEach(function (l) {
+          var car = lc[l];
+          dist[l].n++;
+          var idx = f.indexOf(car);
+          if (idx === 0) dist[l][1]++;
+          else if (idx === 1) dist[l][2]++;
+          else if (idx === 2) dist[l][3]++;
+          else dist[l].other++;
+        });
+      });
+      return dist;
+    }
+
+    // 外れ方の4分類。判定順は 穴→惜しい→頭違い→ヒモ抜け（排他）。的中行はnullを返す。
+    function classifyMiss(o, hit) {
+      if (hit) return null;
+      var f = o.finish, lc = o.labelToCar || {};
+      var checkCars = ["s1", "s2", "s3", "L"].map(function (l) { return lc[l]; });
+      if (checkCars.indexOf(f[0]) === -1) return "ana";
+      var oshii = o.tickets.some(function (t) {
+        if (t.type !== "sanrentan") return false;
+        var c = t.cars, n = 0;
+        for (var i = 0; i < 3; i++) if (c[i] === f[i]) n++;
+        return n >= 2;
+      });
+      if (oshii) return "oshii";
+      if (lc.s1 !== f[0]) return "atamachigai";
+      return "himonuke";
+    }
+
+    function missClassify(rows) {
+      var counts = { ana: 0, oshii: 0, atamachigai: 0, himonuke: 0 };
+      var list = [];
+      rows.forEach(function (o) {
+        var s = settle(o);
+        if (s.hit) return;
+        var cls = classifyMiss(o, false);
+        counts[cls]++;
+        list.push({ o: o, s: s, cls: cls });
+      });
+      return { counts: counts, list: list };
+    }
+
+    // 新8点の当てはめ集計。記録済みticketsは使わず、labelToCarから全行（liveFrom等のフィルタ無視）に当てはめる。
+    // 2026-10-18以前の行は「当てはめ値（参考）」として referenceCount に含める。
+    function eightPointsMeasured(records) {
+      var rows = validRows(records);
+      var per = {};
+      NEW8_TICKETS.forEach(function (t) { per[t.key] = { n: 0, hits: 0, payout: 0 }; });
+      var overallHitRows = 0, totalRows = 0, referenceRows = 0;
+      rows.forEach(function (o) {
+        var lc = o.labelToCar || {};
+        var f = o.finish;
+        totalRows++;
+        if (o.date < NEW8_FROM) referenceRows++;
+        var anyHit = false;
+        NEW8_TICKETS.forEach(function (t) {
+          var cars = t.labs.map(function (l) { return lc[l]; });
+          var hit = false, payout = 0;
+          if (t.type === "sanrentan") {
+            if (cars[0] === f[0] && cars[1] === f[1] && cars[2] === f[2]) { hit = true; payout = o.payouts.sanrentan; }
+          } else {
+            if (cars[0] === f[0] && cars[1] === f[1]) { hit = true; payout = o.payouts.nisyatan; }
+          }
+          per[t.key].n++;
+          if (hit) { per[t.key].hits++; per[t.key].payout += payout; anyHit = true; }
+        });
+        if (anyHit) overallHitRows++;
+      });
+      return { per: per, overallHitRows: overallHitRows, totalRows: totalRows, referenceRows: referenceRows };
+    }
+
+    // 日別の損益カレンダー用集計（date→{n,hits,stake,payout}）
+    function dailyAgg(rows) {
+      return simpleCross(rows, function (o) { return o.date; });
+    }
+
+    // 累計回収額（払戻-投資）の折れ線用。日付昇順で日ごとに累積。
+    function cumulativeSeries(rows) {
+      var daily = dailyAgg(rows);
+      var dates = daily.order.slice().sort();
+      var cum = 0, out = [];
+      dates.forEach(function (d) {
+        var b = daily.map[d];
+        cum += (b.payout - b.stake);
+        out.push({ date: d, cum: cum });
+      });
+      return out;
+    }
+
+    // 名場面: 的中の高配当top10 / 惜敗（oshii分類）の払戻額top10
+    function highlights(rows) {
+      var settledAll = rows.map(function (o) { return { o: o, s: settle(o) }; });
+      var bigHits = settledAll.filter(function (x) { return x.s.hit; })
+        .sort(function (a, b) { return b.s.payout - a.s.payout; }).slice(0, 10);
+      var miss = missClassify(rows);
+      var oshii = miss.list.filter(function (x) { return x.cls === "oshii"; })
+        .sort(function (a, b) { return (b.o.payouts.sanrentan || 0) - (a.o.payouts.sanrentan || 0); }).slice(0, 10);
+      return { bigHits: bigHits, oshii: oshii };
+    }
+
     return {
-      compute: compute, settle: settle, validRows: validRows, pct: pct, windBand: windBand,
-      LIVE_FROM: LIVE_FROM, TIERS: TIERS, GRADES: GRADES, GRADE_LABEL: GRADE_LABEL, WIND_BANDS: WIND_BANDS
+      compute: compute, settle: settle, validRows: validRows, pct: pct, windBand: windBand, linesKey: linesKey,
+      LIVE_FROM: LIVE_FROM, NEW8_FROM: NEW8_FROM, TIERS: TIERS, GRADES: GRADES, GRADE_LABEL: GRADE_LABEL, WIND_BANDS: WIND_BANDS,
+      LABELS: LABELS, NEW8_TICKETS: NEW8_TICKETS, blank: blank, accum: accum,
+      filterRows: filterRows, simpleCross: simpleCross, byVenueAgg: byVenueAgg, abcDist: abcDist,
+      classifyMiss: classifyMiss, missClassify: missClassify, eightPointsMeasured: eightPointsMeasured,
+      dailyAgg: dailyAgg, cumulativeSeries: cumulativeSeries, highlights: highlights
     };
   })();
 
@@ -442,9 +664,11 @@
     var A = LedgerAgg;
     var pct = A.pct;
 
+    var STATE = { newOnly: false, tab: "seiseki", records: [], sortVenue: { col: "n", dir: -1 }, recFilter: { date: "", venue: "", grade: "", hit: "" } };
+
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
     function fmtPct(v) { return v.toFixed(1) + "%"; }
-    function fmtYen(v) { return (v < 0 ? "-¥" : "¥") + Math.abs(v).toLocaleString("ja-JP"); }
+    function fmtYen(v) { return (v < 0 ? "-¥" : "¥") + Math.abs(Math.round(v)).toLocaleString("ja-JP"); }
     function recClass(v) { return v >= 100 ? "rec-pos" : "rec-neg"; }
     function tierTag(t) { return "<span class='tier-tag " + t + "'>" + t + "</span>"; }
 
@@ -489,86 +713,356 @@
       return chain.then(function () { return records; });
     }
 
-    function tierRow(label, b) {
-      return "<tr><td>" + label + "</td>" +
-        "<td class='num'>" + b.n + "</td>" +
-        "<td class='num'>" + fmtPct(pct(b.hits, b.n)) + "</td>" +
-        "<td class='num " + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</td>" +
-        "<td class='num'>" + fmtYen(b.payout - b.stake) + "</td></tr>";
-    }
-
-    function cell(b) {
-      if (b.n === 0) return "<td class='num' style='color:var(--text-dim)'>—</td>";
-      return "<td class='num'>" + fmtPct(pct(b.hits, b.n)) + "<br><span class='" + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</span><br><span style='font-size:10px;color:var(--text-dim)'>n=" + b.n + "</span></td>";
-    }
-
-    function crossTable(title, sub, keyHead, keys, map, labelFn) {
-      var h = "<section><h2>" + title + "</h2><p class='subhead'>" + sub + "</p><div class='table-scroll'><table><thead><tr>" +
-        "<th>" + keyHead + "</th><th>A</th><th>B</th><th>C</th><th>全体</th></tr></thead><tbody>";
-      keys.forEach(function (k) {
-        var m = map[k];
-        if (!m) return;
-        h += "<tr><td>" + esc(labelFn ? labelFn(k) : k) + "</td>" + cell(m.A) + cell(m.B) + cell(m.C) + cell(m.ALL) + "</tr>";
-      });
-      return h + "</tbody></table></div></section>";
-    }
-
-    function render(d) {
+    // ===== タブ共通: フィルタバー ＋ タブバーの骨格 =====
+    function shellHtml() {
       var html = "";
-      var ov = d.byTier.ALL;
+      html += "<div class='filter-bar'>";
+      html += "<label for='period-select'>集計期間</label>";
+      html += "<select id='period-select'>";
+      html += "<option value='all'" + (STATE.newOnly ? "" : " selected") + ">全期間</option>";
+      html += "<option value='new8'" + (STATE.newOnly ? " selected" : "") + ">新8点のみ（" + A.NEW8_FROM + "〜）</option>";
+      html += "</select>";
+      if (!STATE.newOnly) html += "<span class='filter-note'>〜" + esc(dateMinusOne(A.NEW8_FROM)) + "は旧買い目での記録です。</span>";
+      html += "</div>";
+      html += "<div class='tabbar' id='tabbar'>";
+      [["seiseki", "成績"], ["venue", "場別・条件別"], ["kensho", "検証"], ["kiroku", "記録"]].forEach(function (t) {
+        html += "<button class='tab-btn" + (STATE.tab === t[0] ? " active" : "") + "' data-tab='" + t[0] + "'>" + t[1] + "</button>";
+      });
+      html += "</div>";
+      html += "<div class='tab-panel active' id='panel-seiseki'></div>";
+      html += "<div class='tab-panel' id='panel-venue'></div>";
+      html += "<div class='tab-panel' id='panel-kensho'></div>";
+      html += "<div class='tab-panel' id='panel-kiroku'></div>";
+      html += "<div class='note'>集計対象: 台帳開始日（稼働日）以降に毎晩自動取得した初見レースのみ。過去データの遡及再計算は含みません。<br>数値はシャドー台帳の自動集計による非公式値です。的中・回収は着順・払戻と買い目から再計算しており、記録済みの hit_bets / payout には依存していません。1レース最大800円（8点×100円）・実投票ではありません。</div>";
+      return html;
+    }
+
+    function dateMinusOne(d) {
+      var dt = new Date(d + "T00:00:00Z");
+      dt.setUTCDate(dt.getUTCDate() - 1);
+      return dt.toISOString().slice(0, 10);
+    }
+
+    // ===== タブ1: 成績 =====
+    function renderSeiseki(rows) {
+      var html = "";
+      var agg = A.blank();
+      rows.forEach(function (o) { A.accum(agg, A.settle(o)); });
       html += "<section><h2>総合サマリー</h2><div class='summary'>";
-      html += "<div class='stat'><div class='label'>的中率</div><div class='value num'>" + fmtPct(pct(ov.hits, ov.n)) + "</div><div class='sub'>" + ov.hits + " / " + ov.n + " レース的中</div></div>";
-      html += "<div class='stat'><div class='label'>回収率</div><div class='value num " + recClass(pct(ov.payout, ov.stake)) + "'>" + fmtPct(pct(ov.payout, ov.stake)) + "</div><div class='sub'>" + fmtYen(ov.payout) + " / " + fmtYen(ov.stake) + "</div></div>";
-      html += "<div class='stat'><div class='label'>レース数</div><div class='value num'>" + ov.n + "</div><div class='sub'>精算済み（A/B/C全て）</div></div>";
-      html += "<div class='stat'><div class='label'>期間</div><div class='value' style='font-size:14px'>" + esc((d.minDate || "?") + " 〜 " + (d.maxDate || "?")) + "</div><div class='sub'>シャドー台帳</div></div>";
+      html += "<div class='stat'><div class='label'>的中率</div><div class='value num'>" + fmtPct(pct(agg.hits, agg.n)) + "</div><div class='sub'>" + agg.hits + " / " + agg.n + " レース的中</div></div>";
+      html += "<div class='stat'><div class='label'>回収率</div><div class='value num " + recClass(pct(agg.payout, agg.stake)) + "'>" + fmtPct(pct(agg.payout, agg.stake)) + "</div><div class='sub'>" + fmtYen(agg.payout) + " / " + fmtYen(agg.stake) + "</div></div>";
+      html += "<div class='stat'><div class='label'>投資</div><div class='value num'>" + fmtYen(agg.stake) + "</div><div class='sub'>1レース最大800円</div></div>";
+      html += "<div class='stat'><div class='label'>損益</div><div class='value num " + recClass(pct(agg.payout, agg.stake)) + "'>" + fmtYen(agg.payout - agg.stake) + "</div><div class='sub'>払戻-投資</div></div>";
       html += "</div></section>";
 
-      html += "<section><h2>ティア別成績（全期間）</h2><div class='table-scroll'><table><thead><tr>" +
-        "<th>ティア</th><th>R数</th><th>的中率</th><th>回収率</th><th>損益</th></tr></thead><tbody>";
-      A.TIERS.forEach(function (t) { html += tierRow(tierTag(t), d.byTier[t]); });
-      html += tierRow("<b>全体</b>", ov);
+      html += "<section><h2>累計回収額の推移</h2><div class='chart-wrap'>" + cumulativeChartSvg(rows) + "</div></section>";
+
+      html += "<section><h2>日別損益カレンダー</h2>" + calendarHtml(rows) + "</section>";
+
+      var streaks = streakInfo(rows);
+      html += "<section><h2>連勝・連敗</h2><div class='table-scroll'><table><thead><tr><th>項目</th><th>値</th></tr></thead><tbody>";
+      html += "<tr><td>最大連勝</td><td class='num'>" + streaks.maxWin + "</td></tr>";
+      html += "<tr><td>最大連敗</td><td class='num'>" + streaks.maxLose + "</td></tr>";
+      html += "<tr><td>現在の" + (streaks.curIsWin ? "連勝" : "連敗") + "</td><td class='num'>" + streaks.cur + "</td></tr>";
       html += "</tbody></table></div></section>";
 
-      html += crossTable("月別推移", "各セル: 的中率 / 回収率 / 件数", "月", Object.keys(d.byMonth).sort(), d.byMonth);
-      html += crossTable("級班別", "各セル: 的中率 / 回収率 / 件数", "級班", A.GRADES, d.byGrade, function (k) { return A.GRADE_LABEL[k] || k; });
-      html += crossTable("ライン数別", "各セル: 的中率 / 回収率 / 件数", "ライン", Object.keys(d.byLines).sort(), d.byLines, function (k) { return k + "分戦"; });
-      html += crossTable("実効風速帯別", "実効風速 = 風速 × バンクβ（m/s）", "風", A.WIND_BANDS, d.byWind, function (k) { return k + " m/s"; });
+      document.getElementById("panel-seiseki").innerHTML = html;
+    }
 
-      html += "<section><h2>連敗</h2><div class='table-scroll'><table><thead><tr><th>ティア</th><th>最大連敗</th><th>最大連敗の終了日</th><th>現在の連敗</th></tr></thead><tbody>";
-      A.TIERS.concat(["ALL"]).forEach(function (t) {
-        var s = d.streak[t];
-        html += "<tr><td>" + (t === "ALL" ? "<b>全体</b>" : tierTag(t)) + "</td><td class='num'>" + s.max + "</td><td class='num'>" + esc(s.maxEnd || "—") + "</td><td class='num'>" + s.cur + "</td></tr>";
+    function streakInfo(rows) {
+      var sorted = rows.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+      var maxWin = 0, maxLose = 0, curWin = 0, curLose = 0;
+      sorted.forEach(function (o) {
+        var hit = A.settle(o).hit;
+        if (hit) { curWin++; curLose = 0; if (curWin > maxWin) maxWin = curWin; }
+        else { curLose++; curWin = 0; if (curLose > maxLose) maxLose = curLose; }
+      });
+      return { maxWin: maxWin, maxLose: maxLose, cur: curWin > 0 ? curWin : curLose, curIsWin: curWin > 0 };
+    }
+
+    function cumulativeChartSvg(rows) {
+      var series = A.cumulativeSeries(rows);
+      if (series.length === 0) return "<p class='subhead'>データがありません。</p>";
+      var W = 600, H = 160, pad = 24;
+      var vals = series.map(function (p) { return p.cum; });
+      var minV = Math.min(0, Math.min.apply(null, vals));
+      var maxV = Math.max(0, Math.max.apply(null, vals));
+      if (minV === maxV) { minV -= 1; maxV += 1; }
+      var n = series.length;
+      function x(i) { return pad + (n === 1 ? 0 : (W - 2 * pad) * i / (n - 1)); }
+      function y(v) { return H - pad - (H - 2 * pad) * (v - minV) / (maxV - minV); }
+      var pts = series.map(function (p, i) { return x(i).toFixed(1) + "," + y(p.cum).toFixed(1); }).join(" ");
+      var zeroY = y(0).toFixed(1);
+      var last = series[series.length - 1].cum;
+      var color = last >= 0 ? "var(--neon-a)" : "var(--accent)";
+      return "<svg viewBox='0 0 " + W + " " + H + "' width='100%' height='" + H + "' preserveAspectRatio='none'>" +
+        "<line x1='" + pad + "' y1='" + zeroY + "' x2='" + (W - pad) + "' y2='" + zeroY + "' stroke='var(--grid-line)' stroke-width='1'/>" +
+        "<polyline points='" + pts + "' fill='none' stroke='" + color + "' stroke-width='2'/>" +
+        "<text x='" + pad + "' y='14' font-size='10' fill='var(--text-dim)'>" + esc(series[0].date) + "</text>" +
+        "<text x='" + (W - pad) + "' y='14' font-size='10' fill='var(--text-dim)' text-anchor='end'>" + esc(series[series.length - 1].date) + "</text>" +
+        "<text x='" + (W - pad) + "' y='" + (H - 4) + "' font-size='11' fill='" + color + "' text-anchor='end'>" + esc(fmtYen(last)) + "</text>" +
+        "</svg>";
+    }
+
+    function calendarHtml(rows) {
+      var daily = A.dailyAgg(rows).map;
+      var dates = Object.keys(daily);
+      if (!dates.length) return "<p class='subhead'>データがありません。</p>";
+      var months = {};
+      monthList().forEach(function (mk) { months[mk] = true; });
+      var dow = ["日", "月", "火", "水", "木", "金", "土"];
+      var html = "";
+      Object.keys(months).sort().forEach(function (mk) {
+        var y = +mk.slice(0, 4), m = +mk.slice(4, 6);
+        var first = new Date(Date.UTC(y, m - 1, 1));
+        var daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        var startDow = first.getUTCDay();
+        html += "<div class='cal-month'><h3>" + y + "年" + m + "月</h3><div class='cal-grid'>";
+        dow.forEach(function (d) { html += "<div class='cal-dow'>" + d + "</div>"; });
+        for (var i = 0; i < startDow; i++) html += "<div class='cal-cell empty'></div>";
+        for (var d2 = 1; d2 <= daysInMonth; d2++) {
+          var dateStr = mk.slice(0, 4) + "-" + mk.slice(4, 6) + "-" + ("0" + d2).slice(-2);
+          var b = daily[dateStr];
+          if (!b) { html += "<div class='cal-cell'><span class='d'>" + d2 + "</span></div>"; continue; }
+          var net = b.payout - b.stake;
+          var cls = net > 0 ? "win" : (net < 0 ? "lose" : "");
+          html += "<div class='cal-cell " + cls + "'><span class='d'>" + d2 + "</span><span class='p'>" + (net === 0 ? "±0" : (net > 0 ? "+" : "") + Math.round(net / 1000) + "k") + "</span></div>";
+        }
+        html += "</div></div>";
+      });
+      return html;
+    }
+
+    // ===== タブ2: 場別・条件別 =====
+    function venueTableRows(rows) {
+      var v = A.byVenueAgg(rows);
+      return v.order.map(function (k) {
+        var b = v.map[k];
+        return { venue: k, venue_name: b.venue_name, n: b.n, hits: b.hits, hitRate: pct(b.hits, b.n), recRate: pct(b.payout, b.stake) };
+      });
+    }
+
+    function sortedVenueRows(rows) {
+      var list = venueTableRows(rows);
+      var col = STATE.sortVenue.col, dir = STATE.sortVenue.dir;
+      list.sort(function (a, b) {
+        var av = a[col], bv = b[col];
+        if (typeof av === "string") return dir * (av < bv ? -1 : av > bv ? 1 : 0);
+        return dir * (av - bv);
+      });
+      return list;
+    }
+
+    function sparse(n) { return n < 10 ? " sparse" : ""; }
+
+    function simpleCrossTable(title, sub, keyHead, keys, map, labelFn) {
+      var h = "<section><h2>" + title + "</h2><p class='subhead'>" + sub + "</p><div class='table-scroll'><table><thead><tr>" +
+        "<th>" + keyHead + "</th><th>レース数</th><th>的中率</th><th>回収率</th></tr></thead><tbody>";
+      keys.forEach(function (k) {
+        var b = map[k];
+        if (!b) return;
+        h += "<tr class='" + (b.n < 10 ? "sparse" : "") + "'><td>" + esc(labelFn ? labelFn(k) : k) + "</td>" +
+          "<td class='num'>" + b.n + "</td><td class='num'>" + fmtPct(pct(b.hits, b.n)) + "</td>" +
+          "<td class='num " + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</td></tr>";
+      });
+      h += "</tbody></table></div><p class='footnote'>n&lt;10の行は参考値（文字を薄く表示）です。</p></section>";
+      return h;
+    }
+
+    function renderVenue(rows) {
+      var html = "";
+      html += "<section><h2>開催場別</h2><div class='table-scroll'><table><thead><tr>" +
+        "<th class='sortable' data-sort='venue_name'>場 <span class='sort-icon'>▲▼</span></th>" +
+        "<th class='sortable' data-sort='n'>レース数 <span class='sort-icon'>▲▼</span></th>" +
+        "<th class='sortable' data-sort='hits'>的中数 <span class='sort-icon'>▲▼</span></th>" +
+        "<th class='sortable' data-sort='hitRate'>的中率 <span class='sort-icon'>▲▼</span></th>" +
+        "<th class='sortable' data-sort='recRate'>回収率 <span class='sort-icon'>▲▼</span></th>" +
+        "</tr></thead><tbody id='venue-tbody'></tbody></table></div><p class='footnote'>n&lt;10（レース数10未満）の行は参考値です。列見出しタップで並べ替え。</p></section>";
+
+      var gradeAgg = A.simpleCross(rows, function (o) { return o.grade; });
+      html += simpleCrossTable("級班別", "各行: レース数 / 的中率 / 回収率", "級班", A.GRADES, gradeAgg.map, function (k) { return A.GRADE_LABEL[k] || k; });
+
+      var windAgg = A.simpleCross(rows, function (o) { return A.windBand(o.wind && o.wind.eff_speed); });
+      html += simpleCrossTable("実効風速帯別", "実効風速 = 風速 × バンクβ（m/s）", "風", A.WIND_BANDS, windAgg.map, function (k) { return k + " m/s"; });
+
+      var linesAgg = A.simpleCross(rows, function (o) { return A.linesKey(o.num_lines); });
+      html += simpleCrossTable("ライン数別", "各行: レース数 / 的中率 / 回収率", "ライン", linesAgg.order.slice().sort(), linesAgg.map, function (k) { return k + "分戦"; });
+
+      var carsAgg = A.simpleCross(rows, function (o) { return Array.isArray(o.players) ? String(o.players.length) : null; });
+      html += simpleCrossTable("車立て別", "players件数（車番総数）", "車立て", carsAgg.order.slice().sort(), carsAgg.map, function (k) { return k + "車立て"; });
+
+      var kimariteAgg = A.simpleCross(rows, function (o) { return o.kimarite; });
+      html += simpleCrossTable("決まり手別", "着1着を獲った決まり手", "決まり手", kimariteAgg.order.slice(), kimariteAgg.map);
+
+      document.getElementById("panel-venue").innerHTML = html;
+      renderVenueTbody(rows);
+
+      document.querySelectorAll("#panel-venue th.sortable").forEach(function (th) {
+        th.addEventListener("click", function () {
+          var col = th.getAttribute("data-sort");
+          if (STATE.sortVenue.col === col) STATE.sortVenue.dir *= -1;
+          else { STATE.sortVenue.col = col; STATE.sortVenue.dir = 1; }
+          renderVenueTbody(rows);
+        });
+      });
+    }
+
+    function renderVenueTbody(rows) {
+      var list = sortedVenueRows(rows);
+      var html = "";
+      list.forEach(function (r) {
+        html += "<tr class='" + (r.n < 10 ? "sparse" : "") + "'><td>" + esc(r.venue_name) + "</td>" +
+          "<td class='num'>" + r.n + "</td><td class='num'>" + r.hits + "</td>" +
+          "<td class='num'>" + fmtPct(r.hitRate) + "</td>" +
+          "<td class='num " + recClass(r.recRate) + "'>" + fmtPct(r.recRate) + "</td></tr>";
+      });
+      document.getElementById("venue-tbody").innerHTML = html;
+    }
+
+    // ===== タブ3: 検証 =====
+    var MISS_LABEL = { ana: "穴", oshii: "惜しい", atamachigai: "頭違い", himonuke: "ヒモ抜け" };
+    var LABEL_NAME = { s1: "s1(A)", s2: "s2(B)", s3: "s3(C)", L: "L", o1: "o1" };
+
+    function renderKensho(rows) {
+      var html = "";
+      var abc = A.abcDist(rows);
+      html += "<section><h2>A/B/C着順分布</h2><p class='subhead'>s1(A)・s2(B)・s3(C)・L・o1 が着順のどこに入ったか</p><div class='table-scroll'><table><thead><tr>" +
+        "<th>ラベル</th><th>1着</th><th>2着</th><th>3着</th><th>圏外</th><th>n</th></tr></thead><tbody>";
+      A.LABELS.forEach(function (l) {
+        var d = abc[l];
+        html += "<tr><td>" + LABEL_NAME[l] + "</td><td class='num'>" + fmtPct(pct(d[1], d.n)) + "</td>" +
+          "<td class='num'>" + fmtPct(pct(d[2], d.n)) + "</td><td class='num'>" + fmtPct(pct(d[3], d.n)) + "</td>" +
+          "<td class='num'>" + fmtPct(pct(d.other, d.n)) + "</td><td class='num'>" + d.n + "</td></tr>";
       });
       html += "</tbody></table></div></section>";
 
-      html += "<section><h2>直近20レース</h2><div class='table-scroll'><table class='detail recent'><thead><tr>" +
-        "<th>日付</th><th>場</th><th>R</th><th>TIER</th><th>的中</th><th>払戻</th></tr></thead><tbody>";
-      d.recent.forEach(function (x, i) {
-        var o = x.o, s = x.s, f = o.finish;
+      var miss = A.missClassify(rows);
+      var missTotal = miss.counts.ana + miss.counts.oshii + miss.counts.atamachigai + miss.counts.himonuke;
+      html += "<section><h2>外れ方の分類（不的中レースのみ）</h2><div class='table-scroll'><table><thead><tr><th>分類</th><th>件数</th><th>割合</th></tr></thead><tbody>";
+      ["ana", "oshii", "atamachigai", "himonuke"].forEach(function (k) {
+        html += "<tr><td>" + MISS_LABEL[k] + "</td><td class='num'>" + miss.counts[k] + "</td><td class='num'>" + fmtPct(pct(miss.counts[k], missTotal)) + "</td></tr>";
+      });
+      html += "</tbody></table></div><p class='footnote'>判定は上から順に排他的: 「穴」=1着が s1/s2/s3/L のいずれでもない。「惜しい」=三連単の買い目に finish と2着分以上順番込みで合致するものがある。「頭違い」=1着が s1 の車ではない。「ヒモ抜け」=それ以外（1着は s1 だが買い目に無い）。</p></section>";
+
+      var ep = A.eightPointsMeasured(STATE.records);
+      // newOnly切替の影響: 新8点当てはめ自体は「全行」固定だが、トグルがnew8の場合は10/19以降のみを対象に絞る
+      var epRows = STATE.newOnly ? A.validRows(STATE.records).filter(function (o) { return o.date >= A.NEW8_FROM; }) : A.validRows(STATE.records);
+      var epOverallN = 0, epOverallHit = 0;
+      var perRecalc = {};
+      A.NEW8_TICKETS.forEach(function (t) { perRecalc[t.key] = { n: 0, hits: 0, payout: 0 }; });
+      epRows.forEach(function (o) {
+        var lc = o.labelToCar || {}, f = o.finish;
+        epOverallN++;
+        var anyHit = false;
+        A.NEW8_TICKETS.forEach(function (t) {
+          var cars = t.labs.map(function (l) { return lc[l]; });
+          var hit = false, payout = 0;
+          if (t.type === "sanrentan") { if (cars[0] === f[0] && cars[1] === f[1] && cars[2] === f[2]) { hit = true; payout = o.payouts.sanrentan; } }
+          else { if (cars[0] === f[0] && cars[1] === f[1]) { hit = true; payout = o.payouts.nisyatan; } }
+          perRecalc[t.key].n++;
+          if (hit) { perRecalc[t.key].hits++; perRecalc[t.key].payout += payout; anyHit = true; }
+        });
+        if (anyHit) epOverallHit++;
+      });
+      var hasRef = epRows.some(function (o) { return o.date < A.NEW8_FROM; });
+
+      html += "<section><h2>新8点それぞれの実測（当てはめ）</h2><p class='subhead'>記録済みの買い目ではなく、labelToCar から新8点の定義を全行に当てはめて算出" + (hasRef ? "（" + dateMinusOne(A.NEW8_FROM) + " 以前は当てはめ値=参考）" : "") + "</p>";
+      html += "<div class='summary'><div class='stat'><div class='label'>全体的中率</div><div class='value num'>" + fmtPct(pct(epOverallHit, epOverallN)) + "</div><div class='sub'>" + epOverallHit + " / " + epOverallN + "（参考値: 過去1,457R検証で27.2%）</div></div></div>";
+      html += "<div class='table-scroll'><table><thead><tr><th>買い目</th><th>的中数</th><th>払戻合計</th><th>回収率</th></tr></thead><tbody>";
+      A.NEW8_TICKETS.forEach(function (t) {
+        var p = perRecalc[t.key];
+        html += "<tr><td>" + (t.type === "nisyatan" ? "2単 " : "3単 ") + t.key + "</td><td class='num'>" + p.hits + "</td>" +
+          "<td class='num'>" + fmtYen(p.payout) + "</td><td class='num " + recClass(pct(p.payout, p.n * 100)) + "'>" + fmtPct(pct(p.payout, p.n * 100)) + "</td></tr>";
+      });
+      html += "</tbody></table></div></section>";
+
+      document.getElementById("panel-kensho").innerHTML = html;
+    }
+
+    // ===== タブ4: 記録 =====
+    function renderKiroku(rows) {
+      var dates = Array.from(new Set(rows.map(function (o) { return o.date; }))).sort().reverse();
+      var venues = Array.from(new Set(rows.map(function (o) { return o.venue_name || o.venue; }))).sort();
+      var html = "<section><h2>全件（新しい順）</h2>";
+      html += "<div class='record-filters'>";
+      html += "<select id='rf-date'><option value=''>日付:全て</option>" + dates.map(function (d) { return "<option value='" + esc(d) + "'" + (STATE.recFilter.date === d ? " selected" : "") + ">" + esc(d) + "</option>"; }).join("") + "</select>";
+      html += "<select id='rf-venue'><option value=''>場:全て</option>" + venues.map(function (v) { return "<option value='" + esc(v) + "'" + (STATE.recFilter.venue === v ? " selected" : "") + ">" + esc(v) + "</option>"; }).join("") + "</select>";
+      html += "<select id='rf-grade'><option value=''>級別:全て</option>" + A.GRADES.map(function (g) { return "<option value='" + g + "'" + (STATE.recFilter.grade === g ? " selected" : "") + ">" + A.GRADE_LABEL[g] + "</option>"; }).join("") + "</select>";
+      html += "<select id='rf-hit'><option value=''>的中:全て</option><option value='y'" + (STATE.recFilter.hit === "y" ? " selected" : "") + ">的中のみ</option><option value='n'" + (STATE.recFilter.hit === "n" ? " selected" : "") + ">不的中のみ</option></select>";
+      html += "</div>";
+      html += "<div class='table-scroll'><table class='detail recent'><thead><tr>" +
+        "<th>日付</th><th>場</th><th>R</th><th>級別</th><th>風</th><th>確定着順</th><th>決まり手</th><th>的中券種</th><th>払戻</th><th>的中</th></tr></thead><tbody id='kiroku-tbody'></tbody></table></div></section>";
+
+      var hl = A.highlights(rows);
+      html += "<section><h2>名場面</h2><h3 style='font-size:12px;color:var(--text-dim);margin:0 0 6px'>高配当的中 Top10</h3><ul class='highlight-list'>";
+      hl.bigHits.forEach(function (x) {
+        html += "<li><span class='hl-main'>" + esc(x.o.date) + " " + esc(x.o.venue_name || x.o.venue) + " " + x.o.race + "R（" + esc(x.o.finish.join("-")) + "）</span><span class='num hit-y'>" + fmtYen(x.s.payout) + "</span></li>";
+      });
+      html += "</ul><h3 style='font-size:12px;color:var(--text-dim);margin:14px 0 6px'>惜敗 Top10（惜しい分類）</h3><ul class='highlight-list'>";
+      hl.oshii.forEach(function (x) {
+        html += "<li><span class='hl-main'>" + esc(x.o.date) + " " + esc(x.o.venue_name || x.o.venue) + " " + x.o.race + "R（" + esc(x.o.finish.join("-")) + "）</span><span class='num'>" + fmtYen(x.o.payouts.sanrentan || 0) + "（見送り配当）</span></li>";
+      });
+      html += "</ul></section>";
+
+      document.getElementById("panel-kiroku").innerHTML = html;
+      renderKirokuTbody(rows);
+
+      ["rf-date", "rf-venue", "rf-grade", "rf-hit"].forEach(function (id) {
+        document.getElementById(id).addEventListener("change", function (e) {
+          var key = id.slice(3);
+          STATE.recFilter[key] = e.target.value;
+          renderKirokuTbody(rows);
+        });
+      });
+    }
+
+    function betSummaryHtml(o, s) {
+      var f = o.finish;
+      var hitTicket = null;
+      for (var i = 0; i < o.tickets.length; i++) {
+        var t = o.tickets[i], c = t.cars;
+        var win = t.type === "sanrentan" ? (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) : (c[0] === f[0] && c[1] === f[1]);
+        if (win) { hitTicket = t; break; }
+      }
+      if (!hitTicket) return "—";
+      return (hitTicket.type === "sanrentan" ? "3単 " : "2単 ") + esc(hitTicket.cars.join("-"));
+    }
+
+    function renderKirokuTbody(rows) {
+      var f = STATE.recFilter;
+      var filtered = rows.filter(function (o) {
+        if (f.date && o.date !== f.date) return false;
+        if (f.venue && (o.venue_name || o.venue) !== f.venue) return false;
+        if (f.grade && o.grade !== f.grade) return false;
+        var hit = A.settle(o).hit;
+        if (f.hit === "y" && !hit) return false;
+        if (f.hit === "n" && hit) return false;
+        return true;
+      });
+      filtered.sort(function (a, b) { var x = a.date + (a.start_time || ""), y = b.date + (b.start_time || ""); return x < y ? 1 : x > y ? -1 : 0; });
+      var html = "";
+      filtered.forEach(function (o, i) {
+        var s = A.settle(o);
+        html += "<tr class='rt-row' data-rt='k" + i + "'>" +
+          "<td>" + esc(o.date) + "</td><td>" + esc(o.venue_name || o.venue) + "</td><td class='num'>" + o.race + "R</td>" +
+          "<td>" + esc(A.GRADE_LABEL[o.grade] || o.grade || "") + "</td>" +
+          "<td>" + esc((o.wind && o.wind.direction) || "") + " " + ((o.wind && typeof o.wind.eff_speed === "number") ? o.wind.eff_speed.toFixed(1) : "") + "</td>" +
+          "<td class='num'>" + esc(o.finish.join("-")) + "</td><td>" + esc(o.kimarite || "") + "</td>" +
+          "<td>" + betSummaryHtml(o, s) + "</td>" +
+          "<td class='num'>" + (s.hit ? fmtYen(s.payout) : "—") + "</td>" +
+          "<td class='" + (s.hit ? "hit-y" : "hit-n") + "'>" + (s.hit ? "○" : "✕") + "</td></tr>";
         var betsHtml = o.tickets.map(function (t) {
           var c = t.cars;
-          var win = t.type === "sanrentan" ? (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) : (c[0] === f[0] && c[1] === f[1]);
+          var win = t.type === "sanrentan" ? (c[0] === o.finish[0] && c[1] === o.finish[1] && c[2] === o.finish[2]) : (c[0] === o.finish[0] && c[1] === o.finish[1]);
           return "<span class='bet num" + (win ? " bet-hit" : "") + "'>" + (t.type === "nisyatan" ? "2単 " : "3単 ") + esc(c.join("-")) + "</span>";
         }).join("");
-        html += "<tr class='rt-row' data-rt='" + i + "'>" +
-          "<td>" + esc((o.date || "").slice(5)) + "</td>" +
-          "<td>" + esc(o.venue_name || o.venue || "") + "</td>" +
-          "<td class='num'>" + (o.race || "") + "R</td>" +
-          "<td>" + tierTag(o.tier) + "</td>" +
-          "<td class='" + (s.hit ? "hit-y" : "hit-n") + "'>" + (s.hit ? "的中" : "不的中") + "</td>" +
-          "<td class='num'>" + (s.hit ? fmtYen(s.payout) : "—") + "</td></tr>";
-        html += "<tr class='rt-detail' id='rt-detail-" + i + "' hidden><td colspan='6'><div class='race-detail'>" +
-          "<div class='rd-row'>結果: <b class='num'>" + esc(f.join("→")) + "</b>" + (o.kimarite ? "（" + esc(o.kimarite) + "）" : "") + "</div>" +
+        html += "<tr class='rt-detail' id='rt-detail-k" + i + "' hidden><td colspan='10'><div class='race-detail'>" +
           "<div class='rd-row'>買い目（三連単6点＋二車単2点）:</div><div class='bet-grid'>" + betsHtml + "</div>" +
           "<div class='rd-row'>投資 <span class='num'>" + fmtYen(s.stake) + "</span> ／ 払戻 <span class='num'>" + fmtYen(s.payout) + "</span> ／ 回収 <span class='num " + (pct(s.payout, s.stake) >= 100 ? "hit-y" : "hit-n") + "'>" + fmtPct(pct(s.payout, s.stake)) + "</span></div>" +
           "</div></td></tr>";
       });
-      html += "</tbody></table></div></section>";
-
-      html += "<div class='note'>集計対象: 台帳開始日（稼働日）以降に毎晩自動取得した初見レースのみ。過去データの遡及再計算は含みません。<br>数値はシャドー台帳の自動集計による非公式値です。的中・回収は着順・払戻と買い目から再計算しており、記録済みの hit_bets / payout には依存していません。1レース最大800円（8点×100円）・実投票ではありません。</div>";
-
-      document.getElementById("app").innerHTML = html;
-      document.querySelectorAll("tr.rt-row").forEach(function (row) {
+      document.getElementById("kiroku-tbody").innerHTML = html;
+      document.querySelectorAll("#kiroku-tbody tr.rt-row").forEach(function (row) {
         row.addEventListener("click", function () {
           var el = document.getElementById("rt-detail-" + row.getAttribute("data-rt"));
           if (el) el.hidden = !el.hidden;
@@ -576,14 +1070,37 @@
       });
     }
 
+    // ===== 全体描画 =====
+    function renderAll() {
+      var rows = A.filterRows(STATE.records, A.LIVE_FROM, STATE.newOnly);
+      document.getElementById("app").innerHTML = shellHtml();
+      document.getElementById("period-select").addEventListener("change", function (e) {
+        STATE.newOnly = e.target.value === "new8";
+        renderAll();
+      });
+      document.querySelectorAll("#tabbar .tab-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          STATE.tab = btn.getAttribute("data-tab");
+          document.querySelectorAll("#tabbar .tab-btn").forEach(function (b) { b.classList.toggle("active", b === btn); });
+          document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.remove("active"); });
+          document.getElementById("panel-" + STATE.tab).classList.add("active");
+        });
+      });
+      renderSeiseki(rows);
+      renderVenue(rows);
+      renderKensho(rows);
+      renderKiroku(rows);
+    }
+
     if (!A.LIVE_FROM) {
       document.getElementById("app").innerHTML = "<div class='loading'>稼働開始前です。</div>";
       return;
     }
     fetchAll().then(function (records) {
-      var d = A.compute(records);
-      if (!d.rows.length) { document.getElementById("app").innerHTML = "<div class='loading'>稼働開始前です（精算済みのレースがまだありません）。</div>"; return; }
-      render(d);
+      STATE.records = records;
+      var rows = A.filterRows(records, A.LIVE_FROM, false);
+      if (!rows.length) { document.getElementById("app").innerHTML = "<div class='loading'>稼働開始前です（精算済みのレースがまだありません）。</div>"; return; }
+      renderAll();
     }).catch(function (e) {
       document.getElementById("app").innerHTML = "<div class='error'>集計に失敗しました: " + esc(e.message) + "</div>";
     });
