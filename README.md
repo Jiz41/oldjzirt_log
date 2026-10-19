@@ -1,4 +1,4 @@
-# oldjzirt_log — 真・自在律 シャドー台帳
+# oldjzirt_log — Elder Sign's Note（旧・真・自在律 シャドー台帳）
 
 競輪予想ツール oldjzirt（Jiz41/oldjzirt）の予想を、毎晩 GitHub Actions で全レース自動取得→再現計算→結果で精算し、JSONL に蓄積する台帳です。成績は `index.html`（GitHub Pages）で閲覧します。
 
@@ -9,7 +9,7 @@
 | `scripts/shadow_crawl.mjs` | 収集器。開催一覧→出走表→エンジン実行→判定・買い目→結果ページ→精算→JSONL |
 | `scripts/vendor/kaisai.js`, `scripts/vendor/scraper.js` | keirin-proxy からの複製（改変なし。出典・複製日は各ファイル先頭） |
 | `.github/workflows/shadow-crawl.yml` | 毎日 JST 23:50 に実行し、`shadow-data` ブランチへ追記 |
-| `index.html` | 成績ページ。`shadow-data` の JSONL を raw.githubusercontent.com から読む |
+| `index.html` | 成績ページ（Elder Sign's Note）。成績／場別・条件別／検証／記録の4タブ。`shadow-data` の JSONL を raw.githubusercontent.com から読む |
 
 エンジン（`keirin_logic.js`）・`decision_core.js`・`replay/harness.mjs`・`bankdata.json` は複製せず、実行時に Jiz41/oldjzirt を checkout して使います。
 
@@ -51,3 +51,8 @@ node scripts/shadow_crawl.mjs --date 20261015 --out-dir /path/to/tmp --oldjzirt-
 ## 礼儀
 
 全HTTPは3秒間隔の直列。403/429、または5xxの連続で即中断し、部分結果は書きません。開催があるのに1レースも取れなかった日も失敗扱いです。
+
+## 買い目と表示の扱い（2026-10-19〜）
+
+- 現行の買い目は新8点（三連単: s1-s2-s3, s1-s2-L, s2-s1-s3, s1-s3-s2, s1-L-s2, s1-L-s3 ／ 二車単: s2-s1, s2-s3、800円/R）。収集器は oldjzirt の `decision_core.js` から買い目を作るため、10/20分の記録から新8点になります（10/19分は切替前に取得済みで旧買い目のまま）。
+- 台帳のデータは書き換えません。ページ側が全行を `labelToCar` から新8点に組み直して再精算します（`recomputedRows`）。〜10/19は「後付け」（新8点を当てはめた参考値）、10/20〜が「初見」です。
