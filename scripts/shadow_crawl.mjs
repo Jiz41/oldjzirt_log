@@ -726,6 +726,8 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
   data.kimarite = cardHtml ? parseKimarite(cardHtml) : {};
   const built = buildFixture(data, raceId, compactDate);
   const result = await fetchResult(raceId);
+  // 結果が出ていない（競走前・中止等）レースは行を作らない。競走前の出走表・並びが台帳に固定されるのを防ぐ。
+  if (!result.finish) return { rec: null, scraped: true, pending: true };
 
   if (built.skip) {
     return {
@@ -871,7 +873,7 @@ async function main() {
     if (i >= 0) rows[i] = rec; else rows.push(rec);
   };
   // 取り直す価値のある skipped（一時的な取得失敗）。それ以外の skipped（9車・並びなし等）は確定扱い。
-  const RETRY_SKIPS = new Set(['racecard_unavailable', 'engine_no_output']);
+  const RETRY_SKIPS = new Set(['racecard_unavailable', 'engine_no_output', 'no_lineup']);
 
   // 直近3日（未確定行の補完と、前夜の失敗等で欠けたレースの回収）→ 対象日 の順に同じ処理をかける。
   // 確定済みの行はHTTPを出さずに飛ばし、未確定の行は結果ページだけ取り直す。
@@ -915,8 +917,9 @@ async function main() {
             } else st.still_pending++;
             continue;
           }
-          const { rec, scraped } = await crawlRace(oj, race.raceId, c, v.grade);
+          const { rec, scraped, pending } = await crawlRace(oj, race.raceId, c, v.grade);
           if (scraped) st.scraped++;
+          if (pending) { st.not_yet_raced = (st.not_yet_raced || 0) + 1; continue; }
           upsert(rec);
           st.new_rows++;
           if (rec.skipped) st.skipped[rec.skipped] = (st.skipped[rec.skipped] || 0) + 1;
