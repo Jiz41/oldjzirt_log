@@ -31,7 +31,7 @@ const RESCAN_DAYS = 3;
 
 const SERIES_MAP = { 'S級': 's-kyu', 'A級': 'a-kyu', 'A級チャレンジ': 'a-chal', 'ガールズ': 'girls' };
 
-const BANK_NAME_MAP = {
+export const BANK_NAME_MAP = {
   '函館':'🦑函館', '青森':'🍎青森', 'いわき平':'🏝️いわき平',
   '弥彦':'⛩️弥彦', '前橋':'🏔️前橋', '取手':'🐓取手',
   '宇都宮':'🥟宇都宮', '大宮':'🌸大宮', '西武園':'🎡西武園',
@@ -48,7 +48,7 @@ const BANK_NAME_MAP = {
   '佐世保':'🍔佐世保', '別府':'♨️別府', '熊本':'🏯熊本',
 };
 
-const VENUE_PREF_MAP = {
+export const VENUE_PREF_MAP = {
   '函館':'北海道', '青森':'青森', 'いわき平':'福島',
   '弥彦':'新潟', '前橋':'群馬', '取手':'茨城',
   '宇都宮':'栃木', '大宮':'埼玉', '西武園':'埼玉',
@@ -291,9 +291,89 @@ function parseRefundTable(html) {
   return result;
 }
 
+// オッズ表のセルから車番を取り出す（class="n{車番}"）。blank(rowspan)セルはnullを返す。
+function carFromClass($el, $) {
+  const cls = $el.attr('class') || '';
+  const m = cls.match(/\bn(\d+)\b/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// 2車単・3連単の確定オッズ表を {cars, odds} の配列に展開する。
+// 2車単: 列見出し=1着・行見出し=2着。3連単: 外側tableごとに1着固定、列見出し=2着・行見出し=3着
+// （人気順リスト「1-6-2|42.8」と、1着=1固定テーブルの行n2・列n6の値42.8が一致することで確認済み）。
+export function parseOddsTables(html) {
+  const $ = cheerio.load(html);
+  const nisyatan = [];
+  const sanrentan = [];
+
+  const table2 = $('#JS_ODDSCONTENTS_2shatan table.odds_table').first();
+  if (table2.length) {
+    const trs = table2.find('tr');
+    const colCars = [];
+    trs.eq(0).find('th').each((i, th) => {
+      const c = carFromClass($(th), $);
+      if (c !== null) colCars.push(c);
+    });
+    trs.each((i, tr) => {
+      if (i < 2) return; // 0=列見出し, 1=選手名
+      const $tr = $(tr);
+      const rowCar = carFromClass($tr.find('th').first(), $);
+      if (rowCar === null) return;
+      $tr.find('td').each((j, td) => {
+        const colCar = colCars[j];
+        if (colCar === undefined || colCar === rowCar) return;
+        const $td = $(td);
+        if ($td.hasClass('empty')) return;
+        const text = $td.text().trim();
+        if (!/^[\d.]+$/.test(text)) return;
+        nisyatan.push({ cars: [colCar, rowCar], odds: parseFloat(text) });
+      });
+    });
+  }
+
+  $('#JS_ODDSCONTENTS_3rentan table.odds_table').each((ti, table) => {
+    const $table = $(table);
+    const trs = $table.find('tr');
+    const car1 = carFromClass(trs.eq(0).find('th').first(), $);
+    if (car1 === null) return;
+    const colCars = [];
+    trs.eq(1).find('th').each((i, th) => {
+      const c = carFromClass($(th), $);
+      if (c !== null) colCars.push(c);
+    });
+    trs.each((ri, tr) => {
+      if (ri < 3) return; // 0=1着見出し, 1=列見出し, 2=選手名
+      const $tr = $(tr);
+      const car3 = carFromClass($tr.find('th').first(), $);
+      if (car3 === null) return;
+      $tr.find('td').each((j, td) => {
+        const car2 = colCars[j];
+        if (car2 === undefined || car2 === car1 || car2 === car3) return;
+        const $td = $(td);
+        if ($td.hasClass('empty')) return;
+        const text = $td.text().trim();
+        if (!/^[\d.]+$/.test(text)) return;
+        sanrentan.push({ cars: [car1, car2, car3], odds: parseFloat(text) });
+      });
+    });
+  });
+
+  return { nisyatan, sanrentan };
+}
+
+// predict() の tickets（同順）に、取得済みオッズ表から確定オッズを引き合わせる。欠落は null。
+export function buildOdds(tickets, oddsTables) {
+  return tickets.map((t) => {
+    if (!oddsTables) return { type: t.type, cars: t.cars, odds: null };
+    const list = t.type === 'sanrentan' ? oddsTables.sanrentan : oddsTables.nisyatan;
+    const found = list.find((o) => o.cars.length === t.cars.length && o.cars.every((c, i) => c === t.cars[i]));
+    return { type: t.type, cars: t.cars, odds: found ? found.odds : null };
+  });
+}
+
 // 着順・決まり手・払戻・発走予定時刻。着順が3着まで揃わなければ finish=null（未確定）。
 export function parseResultPage(html) {
-  const out = { finish: null, kimarite: null, payouts: null, startTime: null };
+  const out = { finish: null, kimarite: null, payouts: null, startTime: null, oddsTables: null };
   const st = html.match(/<dt class="start">発走予定<\/dt>\s*<dd>\s*(\d{1,2}):(\d{2})\s*<\/dd>/);
   if (st) out.startTime = `${st[1].padStart(2, '0')}:${st[2]}`;
 
@@ -321,6 +401,7 @@ export function parseResultPage(html) {
   out.kimarite = kimarite;
   const p = parseRefundTable(html);
   out.payouts = { nisyatan: p.nisyatan, sanrentan: p.sanrentan };
+  out.oddsTables = parseOddsTables(html);
   return out;
 }
 
@@ -328,7 +409,7 @@ export async function fetchResult(raceId) {
   const slug = SLUG_BY_CODE[raceId.slice(0, 2)];
   const url = `https://keirin.kdreams.jp/${slug}/racedetail/${raceId}/?pageType=result`;
   const res = await politeFetch(url, { headers: { Accept: 'text/html', 'Accept-Language': 'ja-JP' } });
-  if (!res.ok) return { finish: null, kimarite: null, payouts: null, startTime: null, httpStatus: res.status };
+  if (!res.ok) return { finish: null, kimarite: null, payouts: null, startTime: null, oddsTables: null, httpStatus: res.status };
   return parseResultPage(await res.text());
 }
 
@@ -667,6 +748,7 @@ export async function predict(oj, fixture) {
   return {
     labelToCar,
     tickets: tickets.map((t) => ({ type: t.type, cars: t.cars })),
+    ticket_probs: prob.perTicket.map((t) => ({ type: t.type, cars: t.cars, prob: Math.round(t.prob * 1e8) / 1e8 })),
     tier: tierResult.letter,
     tier_detail: tierResult.tier,
     prob_total: Math.round(prob.totalProb * 1e6) / 1e6,
@@ -793,6 +875,8 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     labelToCar: pred.labelToCar,
     ranked: pred.ranked,
     tickets: pred.tickets,
+    ticket_probs: pred.ticket_probs,
+    odds: buildOdds(pred.tickets, result.oddsTables),
     tier: pred.tier,
     tier_detail: pred.tier_detail,
     prob_total: pred.prob_total,
@@ -910,7 +994,13 @@ async function main() {
             if (prev.stake !== null) { st.already_settled++; continue; }
             const res = await fetchResult(race.raceId);
             if (res.finish) {
-              const rec = { ...prev, finish: res.finish, kimarite: res.kimarite, payouts: res.payouts };
+              const rec = {
+                ...prev,
+                finish: res.finish,
+                kimarite: res.kimarite,
+                payouts: res.payouts,
+                odds: buildOdds(prev.tickets, res.oddsTables),
+              };
               Object.assign(rec, settle(rec), { crawled_at: new Date().toISOString() });
               upsert(rec);
               if (rec.stake !== null) st.refilled++; else st.still_pending++;
