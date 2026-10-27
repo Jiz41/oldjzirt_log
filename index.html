@@ -807,9 +807,11 @@
         A.accum(agg, s);
         A.accum(o.retro ? aggAtozuke : aggShonen, s);
       });
-      html += summaryCardsHtml(aggShonen, "初見（" + A.NEW8_FROM + "〜）", "まだデータなし（" + A.NEW8_FROM + "から）");
-      html += summaryCardsHtml(aggAtozuke, "後付け（〜" + dateMinusOne(A.NEW8_FROM) + "・新8点を当てはめ）");
-      html += summaryCardsHtml(agg, "合算");
+      html += summaryCardsHtml(agg, "通算（新8点・全期間）");
+      html += "<p class='subhead' style='margin:-4px 0 12px'>うち初見（" + esc(A.NEW8_FROM) + "〜）：" +
+        (aggShonen.n === 0 ? "まだデータなし"
+          : aggShonen.n + "レース・的中" + fmtPct(pct(aggShonen.hits, aggShonen.n)) + "・回収率" + fmtPct(pct(aggShonen.payout, aggShonen.stake)) + "（" + fmtYen(aggShonen.payout - aggShonen.stake) + "）") +
+        "　／　後付け（〜" + esc(dateMinusOne(A.NEW8_FROM)) + "）は新8点を過去に当てはめた参考値</p>";
 
       html += "<section><h2>累計回収額の推移</h2><div class='chart-wrap'>" + cumulativeChartSvg(rows) + "</div></section>";
 
