@@ -406,7 +406,7 @@
     var GRADES = ["s-kyu", "a-kyu", "a-chal", "girls"];
     var GRADE_LABEL = { "s-kyu": "S級", "a-kyu": "A級", "a-chal": "A級チャレンジ", "girls": "ガールズ" };
     var WIND_BANDS = ["<1.5", "1.5-3", "3+"];
-    var LABELS = ["s1", "s2", "s3", "L", "o1"];
+    var LABELS = ["s1", "s2", "s3", "L"];
     // 新8点の固定定義（ラベル→labelToCarで車番化して精算する。記録済みticketsは使わない）
     var NEW8_TICKETS = [
       { key: "s1-s2-s3", type: "sanrentan", labs: ["s1", "s2", "s3"] },
@@ -996,7 +996,7 @@
     function renderKensho(rows) {
       var html = "";
       var abc = A.abcDist(rows);
-      html += "<section><h2>A/B/C着順分布</h2><p class='subhead'>s1(A)・s2(B)・s3(C)・L・o1 が着順のどこに入ったか</p><div class='table-scroll'><table><thead><tr>" +
+      html += "<section><h2>A/B/C着順分布</h2><p class='subhead'>s1(A)・s2(B)・s3(C)・L が着順のどこに入ったか</p><div class='table-scroll'><table><thead><tr>" +
         "<th>ラベル</th><th>1着</th><th>2着</th><th>3着</th><th>圏外</th><th>n</th></tr></thead><tbody>";
       A.LABELS.forEach(function (l) {
         var d = abc[l];
