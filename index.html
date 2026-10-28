@@ -484,6 +484,39 @@
       return { stake: o.tickets.length * 100, payout: payout, hit: hits > 0 };
     }
 
+    // オッズ加味の精算: 確定オッズが必要倍率（1/的中確率）以上の買い目だけ買った場合。
+    // ticket_probs / odds が無い・不備な行は null（除外）。買い目は type+cars で突き合わせる（添字では対応させない）。
+    function findByTypeCars(list, type, cars) {
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        if (e && e.type === type && Array.isArray(e.cars) && e.cars.length === cars.length) {
+          var same = true;
+          for (var j = 0; j < cars.length; j++) { if (e.cars[j] !== cars[j]) { same = false; break; } }
+          if (same) return e;
+        }
+      }
+      return null;
+    }
+
+    function settleOdds(o) {
+      if (!Array.isArray(o.ticket_probs) || !Array.isArray(o.odds)) return null;
+      var f = o.finish;
+      var stake = 0, payout = 0, hits = 0, bought = 0;
+      for (var i = 0; i < o.tickets.length; i++) {
+        var t = o.tickets[i], c = t.cars;
+        var pEntry = findByTypeCars(o.ticket_probs, t.type, c);
+        var oEntry = findByTypeCars(o.odds, t.type, c);
+        if (!pEntry || typeof pEntry.prob !== "number" || pEntry.prob <= 0) return null;
+        if (!oEntry || typeof oEntry.odds !== "number") return null;
+        if (oEntry.odds * pEntry.prob < 1) continue;
+        bought++;
+        stake += 100;
+        if (t.type === "sanrentan" && c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) { hits++; payout += o.payouts.sanrentan; }
+        else if (t.type === "nisyatan" && c[0] === f[0] && c[1] === f[1]) { hits++; payout += o.payouts.nisyatan; }
+      }
+      return { stake: stake, payout: payout, hit: hits > 0, bought: bought };
+    }
+
     function blank() { return { n: 0, hits: 0, stake: 0, payout: 0 }; }
     function accum(b, s) {
       b.n++;
@@ -690,7 +723,7 @@
     }
 
     return {
-      compute: compute, settle: settle, validRows: validRows, pct: pct, windBand: windBand, linesKey: linesKey,
+      compute: compute, settle: settle, settleOdds: settleOdds, validRows: validRows, pct: pct, windBand: windBand, linesKey: linesKey,
       LIVE_FROM: LIVE_FROM, NEW8_FROM: NEW8_FROM, TIERS: TIERS, GRADES: GRADES, GRADE_LABEL: GRADE_LABEL, WIND_BANDS: WIND_BANDS,
       LABELS: LABELS, NEW8_TICKETS: NEW8_TICKETS, blank: blank, accum: accum,
       ticketsFromLabelToCar: ticketsFromLabelToCar, retroTickets: retroTickets, recomputedRows: recomputedRows,
@@ -799,6 +832,40 @@
       return html;
     }
 
+    // 「全買い vs オッズ加味」比較セクション。対象行は settleOdds が null でない行のみ（両列で同じ母集団）。
+    function oddsComparisonHtml(rows) {
+      var excluded = 0, skipped = 0;
+      var aggAll = A.blank(), aggOdds = A.blank();
+      rows.forEach(function (o) {
+        var so = A.settleOdds(o);
+        if (so === null) { excluded++; return; }
+        A.accum(aggAll, A.settle(o));
+        if (so.bought >= 1) {
+          aggOdds.n++;
+          aggOdds.stake += so.stake;
+          aggOdds.payout += so.payout;
+          if (so.hit) aggOdds.hits++;
+        } else {
+          skipped++;
+        }
+      });
+      var colHtml = function (agg) {
+        return "<table><tbody>" +
+          "<tr><th>レース数</th><td class='num'>" + agg.n + "</td></tr>" +
+          "<tr><th>投資額</th><td class='num'>" + fmtYen(agg.stake) + "</td></tr>" +
+          "<tr><th>払戻</th><td class='num'>" + fmtYen(agg.payout) + "</td></tr>" +
+          "<tr><th>損益</th><td class='num " + recClass(pct(agg.payout, agg.stake)) + "'>" + fmtYen(agg.payout - agg.stake) + "</td></tr>" +
+          "<tr><th>的中率</th><td class='num'>" + fmtPct(pct(agg.hits, agg.n)) + "</td></tr>" +
+          "<tr><th>回収率</th><td class='num " + recClass(pct(agg.payout, agg.stake)) + "'>" + fmtPct(pct(agg.payout, agg.stake)) + "</td></tr>" +
+          "</tbody></table>";
+      };
+      var html = "<section><h2>全買い vs オッズ加味</h2><div class='table-scroll' style='display:flex;gap:12px;flex-wrap:wrap'>" +
+        "<div style='flex:1;min-width:140px'><h3 style='margin:4px 0'>全買い</h3>" + colHtml(aggAll) + "</div>" +
+        "<div style='flex:1;min-width:140px'><h3 style='margin:4px 0'>オッズ加味</h3>" + colHtml(aggOdds) + "</div>" +
+        "</div><p class='subhead'>オッズ加味＝確定オッズが必要倍率（1÷的中確率）以上の買い目だけ買った場合。1点も買えないレースは母数に含めない（見送り" + skipped + "件）。ticket_probs/odds未取得の" + excluded + "件は両列から除外。確定オッズによる事後計算で参考値</p></section>";
+      return html;
+    }
+
     function renderSeiseki(rows) {
       var html = "";
       var agg = A.blank(), aggShonen = A.blank(), aggAtozuke = A.blank();
@@ -812,6 +879,8 @@
         (aggShonen.n === 0 ? "まだデータなし"
           : aggShonen.n + "レース・的中" + fmtPct(pct(aggShonen.hits, aggShonen.n)) + "・回収率" + fmtPct(pct(aggShonen.payout, aggShonen.stake)) + "（" + fmtYen(aggShonen.payout - aggShonen.stake) + "）") +
         "　／　後付け（〜" + esc(dateMinusOne(A.NEW8_FROM)) + "）は新8点を過去に当てはめた参考値</p>";
+
+      html += oddsComparisonHtml(rows);
 
       html += "<section><h2>累計回収額の推移</h2><div class='chart-wrap'>" + cumulativeChartSvg(rows) + "</div></section>";
 
