@@ -754,16 +754,36 @@
       return dist;
     }
 
+    // 1券がfinishと完全一致（的中条件を満たす）か。settle/settleOddsのhit判定と同一ロジック。
+    function ticketHits(t, f) {
+      var c = t.cars;
+      if (t.type === "sanrentan") return c[0] === f[0] && c[1] === f[1] && c[2] === f[2];
+      if (t.type === "nisyatan") return c[0] === f[0] && c[1] === f[1];
+      return false;
+    }
+
+    // mode="odds"専用: 8点の中にfinishと完全一致する買い目があるが、それがbought===falseだったか。
+    function hasUnboughtHit(o, bi) {
+      if (!bi) return false;
+      for (var i = 0; i < o.tickets.length; i++) {
+        if (ticketHits(o.tickets[i], o.finish) && bi[i] && bi[i].bought === false) return true;
+      }
+      return false;
+    }
+
     // 外れ方の4分類。判定順は 穴→惜しい→頭違い→ヒモ抜け（排他）。的中行はnullを返す。
-    function classifyMiss(o, hit) {
+    // boughtMaskを渡した場合、「惜しい」判定は bought===true の買い目のみを対象にする
+    // （買えなかった買い目を惜しいに数えない。kaenai分類とは呼び出し側で切り分ける）。
+    function classifyMiss(o, hit, boughtMask) {
       if (hit) return null;
       var f = o.finish, lc = o.labelToCar || {};
       var checkCars = ["s1", "s2", "s3", "L"].map(function (l) { return lc[l]; });
       if (checkCars.indexOf(f[0]) === -1) return "ana";
-      var oshii = o.tickets.some(function (t) {
+      var oshii = o.tickets.some(function (t, i) {
         if (t.type !== "sanrentan") return false;
+        if (boughtMask && boughtMask[i] === false) return false;
         var c = t.cars, n = 0;
-        for (var i = 0; i < 3; i++) if (c[i] === f[i]) n++;
+        for (var j = 0; j < 3; j++) if (c[j] === f[j]) n++;
         return n >= 2;
       });
       if (oshii) return "oshii";
@@ -772,16 +792,26 @@
     }
 
     // mode="odds"は買える買い目が0の行（settleOdds null含む）を分類対象から除外（的中でも不的中でもない＝見送り）。
+    // mode="odds"では、着順と一致する買い目が8点の中にあったのに買えなかった行を最優先で"kaenai"に分類する
+    // （買えなかった当たり目はハズレではなく別枠。他の分類には重複して数えない）。
     function missClassify(rows, mode) {
       var md = mode || "all";
       var counts = { ana: 0, oshii: 0, atamachigai: 0, himonuke: 0 };
+      if (md === "odds") counts.kaenai = 0;
       var list = [];
       rows.forEach(function (o) {
         var s = modeSettle(o, md);
         if (s === null) return;
         if (md === "odds" && s.bought === 0) return;
         if (s.hit) return;
-        var cls = classifyMiss(o, false);
+        var bi = (md === "odds") ? boughtInfo(o) : null;
+        if (md === "odds" && hasUnboughtHit(o, bi)) {
+          counts.kaenai++;
+          list.push({ o: o, s: s, cls: "kaenai" });
+          return;
+        }
+        var boughtMask = bi ? bi.map(function (x) { return x.bought; }) : null;
+        var cls = classifyMiss(o, false, boughtMask);
         counts[cls]++;
         list.push({ o: o, s: s, cls: cls });
       });
@@ -1289,7 +1319,7 @@
     }
 
     // ===== タブ3: 検証 =====
-    var MISS_LABEL = { ana: "穴", oshii: "惜しい", atamachigai: "頭違い", himonuke: "ヒモ抜け" };
+    var MISS_LABEL = { ana: "穴", oshii: "惜しい", atamachigai: "頭違い", himonuke: "ヒモ抜け", kaenai: "当たり目はあったが買えず（オッズ不足）" };
     var LABEL_NAME = { s1: "s1(A)", s2: "s2(B)", s3: "s3(C)", L: "L", o1: "o1" };
 
     function renderKensho(rows) {
@@ -1307,12 +1337,13 @@
       html += "</tbody></table></div></section>";
 
       var miss = A.missClassify(rows, mode);
-      var missTotal = miss.counts.ana + miss.counts.oshii + miss.counts.atamachigai + miss.counts.himonuke;
+      var missKeys = (mode === "odds") ? ["kaenai", "ana", "oshii", "atamachigai", "himonuke"] : ["ana", "oshii", "atamachigai", "himonuke"];
+      var missTotal = missKeys.reduce(function (sum, k) { return sum + miss.counts[k]; }, 0);
       html += "<section><h2>外れ方の分類（不的中レースのみ）</h2><div class='table-scroll'><table><thead><tr><th>分類</th><th>件数</th><th>割合</th></tr></thead><tbody>";
-      ["ana", "oshii", "atamachigai", "himonuke"].forEach(function (k) {
+      missKeys.forEach(function (k) {
         html += "<tr><td>" + MISS_LABEL[k] + "</td><td class='num'>" + miss.counts[k] + "</td><td class='num'>" + fmtPct(pct(miss.counts[k], missTotal)) + "</td></tr>";
       });
-      html += "</tbody></table></div><p class='footnote'>判定は上から順に排他的: 「穴」=1着が s1/s2/s3/L のいずれでもない。「惜しい」=三連単の買い目に finish と2着分以上順番込みで合致するものがある。「頭違い」=1着が s1 の車ではない。「ヒモ抜け」=それ以外（1着は s1 だが買い目に無い）。" + (mode === "odds" ? "対象はオッズ加味で不的中だった行（買える買い目が0のレースは除く）。" : "") + "</p></section>";
+      html += "</tbody></table></div><p class='footnote'>判定は上から順に排他的: " + (mode === "odds" ? "「当たり目はあったが買えず（オッズ不足）」=着順と一致する買い目が8点の中にあったが、確定オッズ×的中確率<1で買えなかった（買えなかった当たり目は、ハズレではなく別枠）。それ以外の行のみ以下を判定: " : "") + "「穴」=1着が s1/s2/s3/L のいずれでもない。「惜しい」=三連単の買い目に finish と2着分以上順番込みで合致するものがある。「頭違い」=1着が s1 の車ではない。「ヒモ抜け」=それ以外（1着は s1 だが買い目に無い）。" + (mode === "odds" ? "対象はオッズ加味で不的中だった行（買える買い目が0のレースは除く）。" : "") + "</p></section>";
 
       var ep = A.ticketsMeasured(rows, mode);
       var epOverallN = ep.overallN, epOverallHit = ep.overallHitRows, perRecalc = ep.per;
