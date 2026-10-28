@@ -755,11 +755,15 @@
       return "himonuke";
     }
 
-    function missClassify(rows) {
+    // mode="odds"は買える買い目が0の行（settleOdds null含む）を分類対象から除外（的中でも不的中でもない＝見送り）。
+    function missClassify(rows, mode) {
+      var md = mode || "all";
       var counts = { ana: 0, oshii: 0, atamachigai: 0, himonuke: 0 };
       var list = [];
       rows.forEach(function (o) {
-        var s = settle(o);
+        var s = modeSettle(o, md);
+        if (s === null) return;
+        if (md === "odds" && s.bought === 0) return;
         if (s.hit) return;
         var cls = classifyMiss(o, false);
         counts[cls]++;
@@ -797,14 +801,15 @@
       return { per: per, overallHitRows: overallHitRows, totalRows: totalRows, referenceRows: referenceRows };
     }
 
-    // 日別の損益カレンダー用集計（date→{n,hits,stake,payout}）
-    function dailyAgg(rows) {
-      return simpleCross(rows, function (o) { return o.date; });
+    // 日別の損益カレンダー用集計（date→{n,hits,stake,payout}）。mode="odds"は買える買い目が0の行を除外。
+    function dailyAgg(rows, mode) {
+      var c = crossAgg(rows, function (o) { return o.date; }, mode);
+      return { map: c.map, order: c.order };
     }
 
     // 累計回収額（払戻-投資）の折れ線用。日付昇順で日ごとに累積。
-    function cumulativeSeries(rows) {
-      var daily = dailyAgg(rows);
+    function cumulativeSeries(rows, mode) {
+      var daily = dailyAgg(rows, mode);
       var dates = daily.order.slice().sort();
       var cum = 0, out = [];
       dates.forEach(function (d) {
@@ -815,15 +820,53 @@
       return out;
     }
 
-    // 名場面: 的中の高配当top10 / 惜敗（oshii分類）の払戻額top10
-    function highlights(rows) {
-      var settledAll = rows.map(function (o) { return { o: o, s: settle(o) }; });
+    // 名場面: 的中の高配当top10 / 惜敗（oshii分類）の払戻額top10。mode="odds"は買える買い目が0の行を除外。
+    function highlights(rows, mode) {
+      var md = mode || "all";
+      var settledAll = [];
+      rows.forEach(function (o) {
+        var s = modeSettle(o, md);
+        if (s === null) return;
+        if (md === "odds" && s.bought === 0) return;
+        settledAll.push({ o: o, s: s });
+      });
       var bigHits = settledAll.filter(function (x) { return x.s.hit; })
         .sort(function (a, b) { return b.s.payout - a.s.payout; }).slice(0, 10);
-      var miss = missClassify(rows);
+      var miss = missClassify(rows, md);
       var oshii = miss.list.filter(function (x) { return x.cls === "oshii"; })
         .sort(function (a, b) { return (b.o.payouts.sanrentan || 0) - (a.o.payouts.sanrentan || 0); }).slice(0, 10);
       return { bigHits: bigHits, oshii: oshii };
+    }
+
+    // 新8点それぞれの実測（タブ3表示用）。mode="all"=全8点を毎回買ったとみなす（既存と同一値）。
+    // mode="odds"=買い目ごとに odds*prob>=1 を満たした行だけを集計（ticket_probs/oddsが無い行のその買い目はnから除外）。
+    function ticketsMeasured(rows, mode) {
+      var per = {};
+      NEW8_TICKETS.forEach(function (t) { per[t.key] = { n: 0, hits: 0, payout: 0 }; });
+      var overallHitRows = 0, overallN = 0;
+      rows.forEach(function (o) {
+        var f = o.finish;
+        var anyHit = false;
+        o.tickets.forEach(function (t, idx) {
+          var key = NEW8_TICKETS[idx].key, c = t.cars;
+          if (mode === "odds") {
+            if (!Array.isArray(o.ticket_probs) || !Array.isArray(o.odds)) return;
+            var pEntry = findByTypeCars(o.ticket_probs, t.type, c);
+            var oEntry = findByTypeCars(o.odds, t.type, c);
+            if (!pEntry || typeof pEntry.prob !== "number" || pEntry.prob <= 0) return;
+            if (!oEntry || typeof oEntry.odds !== "number") return;
+            if (oEntry.odds * pEntry.prob < 1) return;
+          }
+          var hit = false, payout = 0;
+          if (t.type === "sanrentan") { if (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) { hit = true; payout = o.payouts.sanrentan; } }
+          else { if (c[0] === f[0] && c[1] === f[1]) { hit = true; payout = o.payouts.nisyatan; } }
+          per[key].n++;
+          if (hit) { per[key].hits++; per[key].payout += payout; anyHit = true; }
+        });
+        overallN++;
+        if (anyHit) overallHitRows++;
+      });
+      return { per: per, overallHitRows: overallHitRows, overallN: overallN };
     }
 
     return {
@@ -836,7 +879,7 @@
       dailyAgg: dailyAgg, cumulativeSeries: cumulativeSeries, highlights: highlights,
       BANK_DATA: BANK_DATA, bankFor: bankFor, lengthBand: lengthBand, straightBand: straightBand,
       cantoBand: cantoBand, s1Style: s1Style, evalRow: evalRow, blankE: blankE, accumE: accumE,
-      judgeExp: judgeExp, modeSettle: modeSettle, crossAgg: crossAgg
+      judgeExp: judgeExp, modeSettle: modeSettle, crossAgg: crossAgg, ticketsMeasured: ticketsMeasured
     };
   })();
 
@@ -910,7 +953,7 @@
       [["all", "全買い"], ["odds", "オッズ加味"]].forEach(function (m) {
         html += "<button class='tab-btn mode-btn" + (STATE.mode === m[0] ? " active" : "") + "' data-mode='" + m[0] + "' style='border:1px solid var(--border);border-radius:4px'>" + m[1] + "</button>";
       });
-      html += "<span class='filter-note' style='width:auto'>オッズ加味＝確定オッズ×的中確率≧1 の買い目だけ買った場合。買える買い目が0のレースは母数に含めない。日別カレンダー・累計回収額グラフ・連勝連敗・検証タブ・記録タブは現時点では全買いの値のまま（未対応）。</span>";
+      html += "<span class='filter-note' style='width:auto'>オッズ加味＝確定オッズ×的中確率≧1 の買い目だけ買った場合。買える買い目が0のレースは母数に含めない。</span>";
       html += "</div>";
       html += "<div class='tabbar' id='tabbar'>";
       [["seiseki", "成績"], ["venue", "場別・条件別"], ["kensho", "検証"], ["kiroku", "記録"]].forEach(function (t) {
@@ -1010,11 +1053,11 @@
 
       html += oddsComparisonHtml(rows);
 
-      html += "<section><h2>累計回収額の推移</h2><div class='chart-wrap'>" + cumulativeChartSvg(rows) + "</div></section>";
+      html += "<section><h2>累計回収額の推移</h2><div class='chart-wrap'>" + cumulativeChartSvg(rows, mode) + "</div></section>";
 
-      html += "<section><h2>日別損益カレンダー</h2>" + calendarHtml(rows) + "</section>";
+      html += "<section><h2>日別損益カレンダー</h2>" + calendarHtml(rows, mode) + "</section>";
 
-      var streaks = streakInfo(rows);
+      var streaks = streakInfo(rows, mode);
       html += "<section><h2>連勝・連敗</h2><div class='table-scroll'><table><thead><tr><th>項目</th><th>値</th></tr></thead><tbody>";
       html += "<tr><td>最大連勝</td><td class='num'>" + streaks.maxWin + "</td></tr>";
       html += "<tr><td>最大連敗</td><td class='num'>" + streaks.maxLose + "</td></tr>";
@@ -1024,19 +1067,23 @@
       document.getElementById("panel-seiseki").innerHTML = html;
     }
 
-    function streakInfo(rows) {
+    // mode="odds"は買える買い目が0の行（settleOdds null含む）を連勝連敗の判定から除外（飛ばす）。
+    function streakInfo(rows, mode) {
       var sorted = rows.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
       var maxWin = 0, maxLose = 0, curWin = 0, curLose = 0;
       sorted.forEach(function (o) {
-        var hit = A.settle(o).hit;
+        var s = A.modeSettle(o, mode);
+        if (s === null) return;
+        if (mode === "odds" && s.bought === 0) return;
+        var hit = s.hit;
         if (hit) { curWin++; curLose = 0; if (curWin > maxWin) maxWin = curWin; }
         else { curLose++; curWin = 0; if (curLose > maxLose) maxLose = curLose; }
       });
       return { maxWin: maxWin, maxLose: maxLose, cur: curWin > 0 ? curWin : curLose, curIsWin: curWin > 0 };
     }
 
-    function cumulativeChartSvg(rows) {
-      var series = A.cumulativeSeries(rows);
+    function cumulativeChartSvg(rows, mode) {
+      var series = A.cumulativeSeries(rows, mode);
       if (series.length === 0) return "<p class='subhead'>データがありません。</p>";
       var W = 600, H = 160, pad = 24;
       var vals = series.map(function (p) { return p.cum; });
@@ -1068,8 +1115,8 @@
         "</svg>";
     }
 
-    function calendarHtml(rows) {
-      var daily = A.dailyAgg(rows).map;
+    function calendarHtml(rows, mode) {
+      var daily = A.dailyAgg(rows, mode).map;
       var dates = Object.keys(daily);
       if (!dates.length) return "<p class='subhead'>データがありません。</p>";
       var months = {};
@@ -1231,6 +1278,7 @@
 
     function renderKensho(rows) {
       var html = "";
+      var mode = STATE.mode;
       var abc = A.abcDist(rows);
       html += "<section><h2>A/B/C着順分布</h2><p class='subhead'>s1(A)・s2(B)・s3(C)・L が着順のどこに入ったか</p><div class='table-scroll'><table><thead><tr>" +
         "<th>ラベル</th><th>1着</th><th>2着</th><th>3着</th><th>圏外</th><th>n</th></tr></thead><tbody>";
@@ -1242,30 +1290,16 @@
       });
       html += "</tbody></table></div></section>";
 
-      var miss = A.missClassify(rows);
+      var miss = A.missClassify(rows, mode);
       var missTotal = miss.counts.ana + miss.counts.oshii + miss.counts.atamachigai + miss.counts.himonuke;
       html += "<section><h2>外れ方の分類（不的中レースのみ）</h2><div class='table-scroll'><table><thead><tr><th>分類</th><th>件数</th><th>割合</th></tr></thead><tbody>";
       ["ana", "oshii", "atamachigai", "himonuke"].forEach(function (k) {
         html += "<tr><td>" + MISS_LABEL[k] + "</td><td class='num'>" + miss.counts[k] + "</td><td class='num'>" + fmtPct(pct(miss.counts[k], missTotal)) + "</td></tr>";
       });
-      html += "</tbody></table></div><p class='footnote'>判定は上から順に排他的: 「穴」=1着が s1/s2/s3/L のいずれでもない。「惜しい」=三連単の買い目に finish と2着分以上順番込みで合致するものがある。「頭違い」=1着が s1 の車ではない。「ヒモ抜け」=それ以外（1着は s1 だが買い目に無い）。</p></section>";
+      html += "</tbody></table></div><p class='footnote'>判定は上から順に排他的: 「穴」=1着が s1/s2/s3/L のいずれでもない。「惜しい」=三連単の買い目に finish と2着分以上順番込みで合致するものがある。「頭違い」=1着が s1 の車ではない。「ヒモ抜け」=それ以外（1着は s1 だが買い目に無い）。" + (mode === "odds" ? "対象はオッズ加味で不的中だった行（買える買い目が0のレースは除く）。" : "") + "</p></section>";
 
-      var epOverallN = rows.length, epOverallHit = 0;
-      var perRecalc = {};
-      A.NEW8_TICKETS.forEach(function (t) { perRecalc[t.key] = { n: 0, hits: 0, payout: 0 }; });
-      rows.forEach(function (o) {
-        var f = o.finish;
-        var anyHit = false;
-        o.tickets.forEach(function (t, idx) {
-          var key = A.NEW8_TICKETS[idx].key, c = t.cars;
-          var hit = false, payout = 0;
-          if (t.type === "sanrentan") { if (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) { hit = true; payout = o.payouts.sanrentan; } }
-          else { if (c[0] === f[0] && c[1] === f[1]) { hit = true; payout = o.payouts.nisyatan; } }
-          perRecalc[key].n++;
-          if (hit) { perRecalc[key].hits++; perRecalc[key].payout += payout; anyHit = true; }
-        });
-        if (anyHit) epOverallHit++;
-      });
+      var ep = A.ticketsMeasured(rows, mode);
+      var epOverallN = ep.overallN, epOverallHit = ep.overallHitRows, perRecalc = ep.per;
       var hasRef = rows.some(function (o) { return o.retro; });
 
       html += "<section><h2>新8点それぞれの実測</h2><p class='subhead'>全行を新8点で再精算した結果" + (hasRef ? "（" + dateMinusOne(A.NEW8_FROM) + " 以前は後付け当てはめ・" + A.NEW8_FROM + "〜は初見）" : "") + "</p>";
@@ -1276,7 +1310,7 @@
         html += "<tr><td>" + (t.type === "nisyatan" ? "2単 " : "3単 ") + t.key + "</td><td class='num'>" + p.hits + "</td>" +
           "<td class='num'>" + fmtYen(p.payout) + "</td><td class='num " + recClass(pct(p.payout, p.n * 100)) + "'>" + fmtPct(pct(p.payout, p.n * 100)) + "</td></tr>";
       });
-      html += "</tbody></table></div></section>";
+      html += "</tbody></table></div>" + (mode === "odds" ? "<p class='footnote'>オッズ加味＝その買い目の確定オッズ×的中確率≧1 だった行のみを集計（n=買えた回数）。</p>" : "") + "</section>";
 
       document.getElementById("panel-kensho").innerHTML = html;
     }
@@ -1295,7 +1329,7 @@
       html += "<div class='table-scroll'><table class='detail recent'><thead><tr>" +
         "<th>日付</th><th>場</th><th>R</th><th>級別</th><th>風</th><th>確定着順</th><th>決まり手</th><th>的中券種</th><th>払戻</th><th>的中</th></tr></thead><tbody id='kiroku-tbody'></tbody></table></div></section>";
 
-      var hl = A.highlights(rows);
+      var hl = A.highlights(rows, STATE.mode);
       html += "<section><h2>名場面</h2><h3 style='font-size:12px;color:var(--text-dim);margin:0 0 6px'>高配当的中 Top10</h3><ul class='highlight-list'>";
       hl.bigHits.forEach(function (x) {
         html += "<li><span class='hl-main'>" + esc(x.o.date) + " " + esc(x.o.venue_name || x.o.venue) + " " + x.o.race + "R（" + esc(x.o.finish.join("-")) + "）</span><span class='num hit-y'>" + fmtYen(x.s.payout) + "</span></li>";
@@ -1331,12 +1365,15 @@
     }
 
     function renderKirokuTbody(rows) {
+      var mode = STATE.mode;
       var f = STATE.recFilter;
       var filtered = rows.filter(function (o) {
         if (f.date && o.date !== f.date) return false;
         if (f.venue && (o.venue_name || o.venue) !== f.venue) return false;
         if (f.grade && o.grade !== f.grade) return false;
-        var hit = A.settle(o).hit;
+        var sRaw = A.modeSettle(o, mode);
+        var skippedBuy = (mode === "odds" && (sRaw === null || sRaw.bought === 0));
+        var hit = skippedBuy ? false : sRaw.hit;
         if (f.hit === "y" && !hit) return false;
         if (f.hit === "n" && hit) return false;
         return true;
@@ -1344,15 +1381,17 @@
       filtered.sort(function (a, b) { var x = a.date + (a.start_time || ""), y = b.date + (b.start_time || ""); return x < y ? 1 : x > y ? -1 : 0; });
       var html = "";
       filtered.forEach(function (o, i) {
-        var s = A.settle(o);
+        var sRaw = A.modeSettle(o, mode);
+        var skippedBuy = (mode === "odds" && (sRaw === null || sRaw.bought === 0));
+        var s = skippedBuy ? null : sRaw;
         html += "<tr class='rt-row' data-rt='k" + i + "'>" +
           "<td>" + esc(o.date) + (o.retro ? " <span style='font-size:10px;color:var(--text-dim);border:1px solid var(--border);border-radius:3px;padding:0 3px'>後付</span>" : "") + "</td><td>" + esc(o.venue_name || o.venue) + "</td><td class='num'>" + o.race + "R</td>" +
           "<td>" + esc(A.GRADE_LABEL[o.grade] || o.grade || "") + "</td>" +
           "<td>" + esc((o.wind && o.wind.direction) || "") + " " + ((o.wind && typeof o.wind.eff_speed === "number") ? o.wind.eff_speed.toFixed(1) : "") + "</td>" +
           "<td class='num'>" + esc(o.finish.join("-")) + "</td><td>" + esc(o.kimarite || "") + "</td>" +
           "<td>" + betSummaryHtml(o, s) + "</td>" +
-          "<td class='num'>" + (s.hit ? fmtYen(s.payout) : "—") + "</td>" +
-          "<td class='" + (s.hit ? "hit-y" : "hit-n") + "'>" + (s.hit ? "○" : "✕") + "</td></tr>";
+          "<td class='num'>" + (skippedBuy ? "—" : (s.hit ? fmtYen(s.payout) : "—")) + "</td>" +
+          "<td class='" + (skippedBuy ? "" : (s.hit ? "hit-y" : "hit-n")) + "'>" + (skippedBuy ? "見送り(買えず)" : (s.hit ? "○" : "✕")) + "</td></tr>";
         var betsHtml = o.tickets.map(function (t) {
           var c = t.cars;
           var win = t.type === "sanrentan" ? (c[0] === o.finish[0] && c[1] === o.finish[1] && c[2] === o.finish[2]) : (c[0] === o.finish[0] && c[1] === o.finish[1]);
@@ -1360,7 +1399,9 @@
         }).join("");
         html += "<tr class='rt-detail' id='rt-detail-k" + i + "' hidden><td colspan='10'><div class='race-detail'>" +
           "<div class='rd-row'>買い目（三連単6点＋二車単2点）:</div><div class='bet-grid'>" + betsHtml + "</div>" +
-          "<div class='rd-row'>投資 <span class='num'>" + fmtYen(s.stake) + "</span> ／ 払戻 <span class='num'>" + fmtYen(s.payout) + "</span> ／ 回収 <span class='num " + (pct(s.payout, s.stake) >= 100 ? "hit-y" : "hit-n") + "'>" + fmtPct(pct(s.payout, s.stake)) + "</span></div>" +
+          (skippedBuy
+            ? "<div class='rd-row'>投資 <span class='num'>—</span> ／ 払戻 <span class='num'>—</span> ／ 回収 <span class='num'>見送り(買えず)</span></div>"
+            : "<div class='rd-row'>投資 <span class='num'>" + fmtYen(s.stake) + "</span> ／ 払戻 <span class='num'>" + fmtYen(s.payout) + "</span> ／ 回収 <span class='num " + (pct(s.payout, s.stake) >= 100 ? "hit-y" : "hit-n") + "'>" + fmtPct(pct(s.payout, s.stake)) + "</span></div>") +
           "</div></td></tr>";
       });
       document.getElementById("kiroku-tbody").innerHTML = html;
