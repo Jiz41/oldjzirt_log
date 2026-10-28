@@ -517,6 +517,81 @@
       return { stake: stake, payout: payout, hit: hits > 0, bought: bought };
     }
 
+    // バンク情報（周回長・直線長・カント角）。/root/oldjzirt/bankdata.json から場名キーを
+    // 絵文字等を除去して生成した定数（生成スクリプト: スクラッチパッド gen_bank_consts.py）。
+    var BANK_DATA = {"いわき平": {"canto": 32.91, "length": 400, "straight": 62.7}, "久留米": {"canto": 31.48, "length": 400, "straight": 50.7}, "京王閣": {"canto": 32.18, "length": 400, "straight": 51.5}, "伊東": {"canto": 34.69, "length": 333, "straight": 46.6}, "佐世保": {"canto": 31.48, "length": 400, "straight": 40.2}, "函館": {"canto": 30.61, "length": 400, "straight": 51.3}, "別府": {"canto": 33.69, "length": 400, "straight": 59.9}, "前橋": {"canto": 36.0, "length": 335, "straight": 46.7}, "取手": {"canto": 31.51, "length": 400, "straight": 54.8}, "名古屋": {"canto": 34.03, "length": 400, "straight": 58.8}, "向日町": {"canto": 30.48, "length": 400, "straight": 47.3}, "和歌山": {"canto": 32.25, "length": 400, "straight": 59.9}, "四日市": {"canto": 32.25, "length": 400, "straight": 62.4}, "大垣": {"canto": 30.62, "length": 400, "straight": 56.0}, "大宮": {"canto": 26.28, "length": 500, "straight": 66.7}, "奈良": {"canto": 33.43, "length": 333, "straight": 38.0}, "宇都宮": {"canto": 25.8, "length": 500, "straight": 63.3}, "富山": {"canto": 33.69, "length": 333, "straight": 43.0}, "小倉": {"canto": 34.03, "length": 400, "straight": 56.9}, "小松島": {"canto": 29.77, "length": 400, "straight": 55.5}, "小田原": {"canto": 35.57, "length": 333, "straight": 36.1}, "岐阜": {"canto": 32.25, "length": 400, "straight": 59.3}, "岸和田": {"canto": 30.93, "length": 400, "straight": 56.7}, "川崎": {"canto": 32.17, "length": 400, "straight": 58.0}, "平塚": {"canto": 31.48, "length": 400, "straight": 54.2}, "広島": {"canto": 32.53, "length": 400, "straight": 57.9}, "弥彦": {"canto": 32.41, "length": 400, "straight": 63.1}, "松山": {"canto": 34.03, "length": 400, "straight": 58.6}, "松戸": {"canto": 29.75, "length": 333, "straight": 38.2}, "松阪": {"canto": 34.42, "length": 400, "straight": 61.5}, "武雄": {"canto": 32.01, "length": 400, "straight": 64.4}, "熊本": {"canto": 34.26, "length": 400, "straight": 60.3}, "玉野": {"canto": 30.63, "length": 400, "straight": 47.9}, "福井": {"canto": 31.48, "length": 400, "straight": 52.8}, "立川": {"canto": 31.22, "length": 400, "straight": 58.0}, "西武園": {"canto": 29.45, "length": 400, "straight": 47.6}, "豊橋": {"canto": 33.84, "length": 400, "straight": 60.3}, "防府": {"canto": 34.69, "length": 333, "straight": 42.5}, "青森": {"canto": 32.25, "length": 400, "straight": 58.9}, "静岡": {"canto": 30.72, "length": 400, "straight": 56.4}, "高松": {"canto": 33.26, "length": 400, "straight": 54.8}, "高知": {"canto": 24.5, "length": 500, "straight": 52.0}};
+
+    function bankFor(venueName) { return BANK_DATA[venueName] || null; }
+    function lengthBand(n) { return typeof n === "number" ? String(n) : null; }
+    function straightBand(v) {
+      if (typeof v !== "number") return null;
+      if (v < 52) return "<52";
+      if (v < 56) return "52-56";
+      if (v < 60) return "56-60";
+      return "60+";
+    }
+    function cantoBand(v) {
+      if (typeof v !== "number") return null;
+      if (v < 31) return "<31";
+      if (v < 32) return "31-32";
+      if (v < 33) return "32-33";
+      return "33+";
+    }
+    function s1Style(o) {
+      var lc = o.labelToCar || {};
+      var car = lc.s1;
+      if (typeof car !== "number" || !Array.isArray(o.players)) return null;
+      for (var i = 0; i < o.players.length; i++) { if (o.players[i].car === car) return o.players[i].style || null; }
+      return null;
+    }
+
+    // 行ごとの「想定（確率×オッズ）vs 実測」評価。ticket_probs/oddsが揃わない行はnull。
+    // mode="all": 全8点を買ったとみなす。mode="odds": odds*prob>=1 の買い目のみ（settleOddsと同じ判定）。
+    // 市場logloss は 競輪の控除率25%を仮定した q = 0.75/odds で近似（注記必須の仮定）。
+    function evalRow(o, mode) {
+      if (!Array.isArray(o.ticket_probs) || !Array.isArray(o.odds)) return null;
+      var f = o.finish;
+      var stake = 0, payout = 0, hits = 0, bought = 0, expPay = 0, varPay = 0, ll_model = 0, ll_mkt = 0, nt = 0;
+      for (var i = 0; i < o.tickets.length; i++) {
+        var t = o.tickets[i], c = t.cars;
+        var pEntry = findByTypeCars(o.ticket_probs, t.type, c);
+        var oEntry = findByTypeCars(o.odds, t.type, c);
+        if (!pEntry || typeof pEntry.prob !== "number" || pEntry.prob <= 0) return null;
+        if (!oEntry || typeof oEntry.odds !== "number") return null;
+        var buy = (mode === "odds") ? (oEntry.odds * pEntry.prob >= 1) : true;
+        if (!buy) continue;
+        bought++; stake += 100;
+        var hit = t.type === "sanrentan" ? (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) : (c[0] === f[0] && c[1] === f[1]);
+        var pay = hit ? (t.type === "sanrentan" ? o.payouts.sanrentan : o.payouts.nisyatan) : 0;
+        if (hit) { hits++; payout += pay; }
+        var p = pEntry.prob;
+        var odd = oEntry.odds;
+        expPay += p * odd * 100;
+        varPay += p * (1 - p) * Math.pow(odd * 100, 2);
+        var pm = Math.min(Math.max(p, 1e-6), 1 - 1e-6);
+        var q = Math.min(Math.max(0.75 / odd, 1e-6), 1 - 1e-6);
+        ll_model += hit ? -Math.log(pm) : -Math.log(1 - pm);
+        ll_mkt += hit ? -Math.log(q) : -Math.log(1 - q);
+        nt++;
+      }
+      return { stake: stake, payout: payout, hit: hits > 0, bought: bought, expPay: expPay, varPay: varPay, ll_model: ll_model, ll_mkt: ll_mkt, nt: nt };
+    }
+
+    function blankE() { return { n: 0, hits: 0, stake: 0, payout: 0, expPay: 0, varPay: 0, ll_model: 0, ll_mkt: 0, nt: 0 }; }
+    function accumE(b, e) {
+      b.n++; b.stake += e.stake; b.payout += e.payout; if (e.hit) b.hits++;
+      b.expPay += e.expPay; b.varPay += e.varPay; b.ll_model += e.ll_model; b.ll_mkt += e.ll_mkt; b.nt += e.nt;
+    }
+    // 想定回収率・判定（z検定・近似）・精度差（logloss差）。nE<30は「標本少」。
+    // zは買い目間の共分散を無視した近似値、参考値。
+    function judgeExp(bE) {
+      if (!bE || bE.n === 0) return null;
+      var z = bE.varPay > 0 ? (bE.payout - bE.expPay) / Math.sqrt(bE.varPay) : 0;
+      var judge = bE.n < 30 ? "標本少" : (z <= -2 ? "想定より低い" : (z >= 2 ? "想定より高い" : "想定の範囲"));
+      var diff = bE.nt > 0 ? (bE.ll_model / bE.nt - bE.ll_mkt / bE.nt) : 0;
+      return { expRate: pct(bE.expPay, bE.stake), z: z, judge: judge, diff: diff, nE: bE.n };
+    }
+
     function blank() { return { n: 0, hits: 0, stake: 0, payout: 0 }; }
     function accum(b, s) {
       b.n++;
@@ -589,6 +664,35 @@
       var rows = from ? recomputedRows(records, skippedCounter).filter(function (o) { return typeof o.date === "string" && o.date >= from; }) : [];
       rows.sort(function (a, b) { var x = orderKey(a), y = orderKey(b); return x < y ? -1 : x > y ? 1 : 0; });
       return rows;
+    }
+
+    // mode連動の精算: "all"=全買い(settle・既存と同一値)、"odds"=オッズ加味(settleOdds・null/bought0は除外)。
+    function modeSettle(o, mode) {
+      if (mode === "odds") return settleOdds(o);
+      return settle(o);
+    }
+
+    // mode連動の汎用クロス集計。基本集計(map: n/hits/stake/payout)はmode="all"なら既存settleと同一値。
+    // 想定系(mapE)はticket_probs/oddsがある行のみの別母集団（judgeExpで表示用に変換する）。
+    function crossAgg(rows, keyFn, mode) {
+      var map = {}, order = [], mapE = {}, orderE = [];
+      rows.forEach(function (o) {
+        var k = keyFn(o);
+        if (k === null || k === undefined) return;
+        var s = modeSettle(o, mode);
+        if (!(mode === "odds" && (s === null || s.bought === 0))) {
+          if (s !== null) {
+            if (!map[k]) { map[k] = blank(); order.push(k); }
+            accum(map[k], s);
+          }
+        }
+        var e = evalRow(o, mode);
+        if (e !== null && !(mode === "odds" && e.bought === 0)) {
+          if (!mapE[k]) { mapE[k] = blankE(); orderE.push(k); }
+          accumE(mapE[k], e);
+        }
+      });
+      return { map: map, order: order, mapE: mapE, orderE: orderE };
     }
 
     // 汎用の単純クロス集計（キー→{n,hits,stake,payout}）。order は初出順の配列。
@@ -729,7 +833,10 @@
       ticketsFromLabelToCar: ticketsFromLabelToCar, retroTickets: retroTickets, recomputedRows: recomputedRows,
       filterRows: filterRows, simpleCross: simpleCross, byVenueAgg: byVenueAgg, abcDist: abcDist,
       classifyMiss: classifyMiss, missClassify: missClassify, eightPointsMeasured: eightPointsMeasured,
-      dailyAgg: dailyAgg, cumulativeSeries: cumulativeSeries, highlights: highlights
+      dailyAgg: dailyAgg, cumulativeSeries: cumulativeSeries, highlights: highlights,
+      BANK_DATA: BANK_DATA, bankFor: bankFor, lengthBand: lengthBand, straightBand: straightBand,
+      cantoBand: cantoBand, s1Style: s1Style, evalRow: evalRow, blankE: blankE, accumE: accumE,
+      judgeExp: judgeExp, modeSettle: modeSettle, crossAgg: crossAgg
     };
   })();
 
@@ -745,7 +852,7 @@
     var A = LedgerAgg;
     var pct = A.pct;
 
-    var STATE = { tab: "seiseki", records: [], skippedCount: 0, sortVenue: { col: "n", dir: -1 }, recFilter: { date: "", venue: "", grade: "", hit: "" } };
+    var STATE = { tab: "seiseki", mode: "all", records: [], skippedCount: 0, sortVenue: { col: "n", dir: -1 }, recFilter: { date: "", venue: "", grade: "", hit: "" } };
 
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
     function fmtPct(v) { return v.toFixed(1) + "%"; }
@@ -799,6 +906,12 @@
       var html = "";
       html += "<p class='filter-note' style='width:auto'>〜" + esc(dateMinusOne(A.NEW8_FROM)) + "は新8点を後付けで当てはめた参考値、" + esc(A.NEW8_FROM) + "〜が初見です。" +
         (STATE.skippedCount > 0 ? "（再精算不能 " + STATE.skippedCount + "件は集計対象外）" : "") + "</p>";
+      html += "<div class='filter-bar'>";
+      [["all", "全買い"], ["odds", "オッズ加味"]].forEach(function (m) {
+        html += "<button class='tab-btn mode-btn" + (STATE.mode === m[0] ? " active" : "") + "' data-mode='" + m[0] + "' style='border:1px solid var(--border);border-radius:4px'>" + m[1] + "</button>";
+      });
+      html += "<span class='filter-note' style='width:auto'>オッズ加味＝確定オッズ×的中確率≧1 の買い目だけ買った場合。買える買い目が0のレースは母数に含めない。日別カレンダー・累計回収額グラフ・連勝連敗・検証タブ・記録タブは現時点では全買いの値のまま（未対応）。</span>";
+      html += "</div>";
       html += "<div class='tabbar' id='tabbar'>";
       [["seiseki", "成績"], ["venue", "場別・条件別"], ["kensho", "検証"], ["kiroku", "記録"]].forEach(function (t) {
         html += "<button class='tab-btn" + (STATE.tab === t[0] ? " active" : "") + "' data-tab='" + t[0] + "'>" + t[1] + "</button>";
@@ -819,7 +932,7 @@
     }
 
     // ===== タブ1: 成績 =====
-    function summaryCardsHtml(agg, title, emptyMsg) {
+    function summaryCardsHtml(agg, title, emptyMsg, aggE) {
       if (agg.n === 0 && emptyMsg) {
         return "<section><h2>" + esc(title) + "</h2><p class='subhead'>" + esc(emptyMsg) + "</p></section>";
       }
@@ -828,6 +941,14 @@
       html += "<div class='stat'><div class='label'>回収率</div><div class='value num " + recClass(pct(agg.payout, agg.stake)) + "'>" + fmtPct(pct(agg.payout, agg.stake)) + "</div><div class='sub'>" + fmtYen(agg.payout) + " / " + fmtYen(agg.stake) + "</div></div>";
       html += "<div class='stat'><div class='label'>投資</div><div class='value num'>" + fmtYen(agg.stake) + "</div><div class='sub'>1レース最大800円</div></div>";
       html += "<div class='stat'><div class='label'>損益</div><div class='value num " + recClass(pct(agg.payout, agg.stake)) + "'>" + fmtYen(agg.payout - agg.stake) + "</div><div class='sub'>払戻-投資</div></div>";
+      if (aggE) {
+        var j = A.judgeExp(aggE);
+        if (j) {
+          html += "<div class='stat'><div class='label'>想定回収率</div><div class='value num'>" + fmtPct(j.expRate) + "</div><div class='sub'>n=" + j.nE + "（ticket_probs/odds有行のみ）</div></div>";
+          html += "<div class='stat'><div class='label'>判定</div><div class='value num'>" + esc(j.judge) + "</div><div class='sub'>z=" + j.z.toFixed(2) + "（近似・参考値）</div></div>";
+          html += "<div class='stat'><div class='label'>精度差（logloss）</div><div class='value num'>" + j.diff.toFixed(3) + "</div><div class='sub'>正=モデルの方が市場より当たらない</div></div>";
+        }
+      }
       html += "</div></section>";
       return html;
     }
@@ -868,13 +989,20 @@
 
     function renderSeiseki(rows) {
       var html = "";
-      var agg = A.blank(), aggShonen = A.blank(), aggAtozuke = A.blank();
+      var mode = STATE.mode;
+      var agg = A.blank(), aggShonen = A.blank(), aggAtozuke = A.blank(), aggE = A.blankE();
       rows.forEach(function (o) {
-        var s = A.settle(o);
-        A.accum(agg, s);
-        A.accum(o.retro ? aggAtozuke : aggShonen, s);
+        var s = A.modeSettle(o, mode);
+        if (!(mode === "odds" && (s === null || s.bought === 0))) {
+          if (s !== null) {
+            A.accum(agg, s);
+            A.accum(o.retro ? aggAtozuke : aggShonen, s);
+          }
+        }
+        var e = A.evalRow(o, mode);
+        if (e !== null && !(mode === "odds" && e.bought === 0)) A.accumE(aggE, e);
       });
-      html += summaryCardsHtml(agg, "通算（新8点・全期間）");
+      html += summaryCardsHtml(agg, "通算（新8点・全期間・" + (mode === "odds" ? "オッズ加味" : "全買い") + "）", null, aggE);
       html += "<p class='subhead' style='margin:-4px 0 12px'>うち初見（" + esc(A.NEW8_FROM) + "〜）：" +
         (aggShonen.n === 0 ? "まだデータなし"
           : aggShonen.n + "レース・的中" + fmtPct(pct(aggShonen.hits, aggShonen.n)) + "・回収率" + fmtPct(pct(aggShonen.payout, aggShonen.stake)) + "（" + fmtYen(aggShonen.payout - aggShonen.stake) + "）") +
@@ -974,10 +1102,17 @@
 
     // ===== タブ2: 場別・条件別 =====
     function venueTableRows(rows) {
-      var v = A.byVenueAgg(rows);
+      var mode = STATE.mode;
+      var byName = {};
+      rows.forEach(function (o) { byName[o.venue] = o.venue_name || o.venue; });
+      var v = A.crossAgg(rows, function (o) { return o.venue; }, mode);
       return v.order.map(function (k) {
         var b = v.map[k];
-        return { venue: k, venue_name: b.venue_name, n: b.n, hits: b.hits, hitRate: pct(b.hits, b.n), recRate: pct(b.payout, b.stake) };
+        var j = A.judgeExp(v.mapE[k]);
+        return {
+          venue: k, venue_name: byName[k] || k, n: b.n, hits: b.hits, hitRate: pct(b.hits, b.n), recRate: pct(b.payout, b.stake),
+          expRate: j ? j.expRate : null, judge: j ? j.judge : null, diff: j ? j.diff : null, nE: j ? j.nE : 0
+        };
       });
     }
 
@@ -994,17 +1129,29 @@
 
     function sparse(n) { return n < 10 ? " sparse" : ""; }
 
-    function simpleCrossTable(title, sub, keyHead, keys, map, labelFn) {
+    function expCellsHtml(mapE, k) {
+      var j = mapE ? A.judgeExp(mapE[k]) : null;
+      if (!j) return "<td class='num'>—</td><td class='num'>—</td><td class='num'>—</td>";
+      return "<td class='num'>" + fmtPct(j.expRate) + "</td><td class='num'>" + esc(j.judge) + "（n=" + j.nE + "）</td><td class='num'>" + j.diff.toFixed(3) + "</td>";
+    }
+
+    function simpleCrossTable(title, sub, keyHead, keys, map, labelFn, mapE) {
       var h = "<section><h2>" + title + "</h2><p class='subhead'>" + sub + "</p><div class='table-scroll'><table><thead><tr>" +
-        "<th>" + keyHead + "</th><th>レース数</th><th>的中率</th><th>回収率</th></tr></thead><tbody>";
+        "<th>" + keyHead + "</th><th>レース数</th><th>的中率</th><th>回収率</th>" +
+        (mapE ? "<th>想定回収率</th><th>判定</th><th>精度差</th>" : "") +
+        "</tr></thead><tbody>";
       keys.forEach(function (k) {
         var b = map[k];
         if (!b) return;
         h += "<tr class='" + (b.n < 10 ? "sparse" : "") + "'><td>" + esc(labelFn ? labelFn(k) : k) + "</td>" +
           "<td class='num'>" + b.n + "</td><td class='num'>" + fmtPct(pct(b.hits, b.n)) + "</td>" +
-          "<td class='num " + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</td></tr>";
+          "<td class='num " + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</td>" +
+          (mapE ? expCellsHtml(mapE, k) : "") +
+          "</tr>";
       });
-      h += "</tbody></table></div><p class='footnote'>n&lt;10の行は参考値（文字を薄く表示）です。</p></section>";
+      h += "</tbody></table></div><p class='footnote'>n&lt;10の行は参考値（文字を薄く表示）です。" +
+        (mapE ? " 想定回収率・判定・精度差は ticket_probs/odds がある行のみの母集団（表の行数と異なる場合あり）。判定は想定払戻との差をz近似したもので、買い目間の相関を無視した参考値、n&lt;30は判定しない。精度差は logloss の差（モデル−市場、控除率25%仮定）、正の値はモデルの方が市場より当たらないことを示す。帯は多重比較になるため、標本が少ない帯・偶然の山に注意。" : "") +
+        "</p></section>";
       return h;
     }
 
@@ -1016,19 +1163,36 @@
         "<th class='sortable' data-sort='hits'>的中数 <span class='sort-icon'>▲▼</span></th>" +
         "<th class='sortable' data-sort='hitRate'>的中率 <span class='sort-icon'>▲▼</span></th>" +
         "<th class='sortable' data-sort='recRate'>回収率 <span class='sort-icon'>▲▼</span></th>" +
-        "</tr></thead><tbody id='venue-tbody'></tbody></table></div><p class='footnote'>n&lt;10（レース数10未満）の行は参考値です。列見出しタップで並べ替え。</p></section>";
+        "<th>想定回収率</th><th>判定</th><th>精度差</th>" +
+        "</tr></thead><tbody id='venue-tbody'></tbody></table></div><p class='footnote'>n&lt;10（レース数10未満）の行は参考値です。列見出しタップで並べ替え（想定回収率等は並べ替え未対応）。想定回収率・判定・精度差は ticket_probs/odds がある行のみの母集団。</p></section>";
 
-      var gradeAgg = A.simpleCross(rows, function (o) { return o.grade; });
-      html += simpleCrossTable("級班別", "各行: レース数 / 的中率 / 回収率", "級班", A.GRADES, gradeAgg.map, function (k) { return A.GRADE_LABEL[k] || k; });
+      var mode = STATE.mode;
+      var gradeAgg = A.crossAgg(rows, function (o) { return o.grade; }, mode);
+      html += simpleCrossTable("級班別", "各行: レース数 / 的中率 / 回収率", "級班", A.GRADES, gradeAgg.map, function (k) { return A.GRADE_LABEL[k] || k; }, gradeAgg.mapE);
 
-      var windAgg = A.simpleCross(rows, function (o) { return A.windBand(o.wind && o.wind.eff_speed); });
-      html += simpleCrossTable("実効風速帯別", "実効風速 = 風速 × バンクβ（m/s）", "風", A.WIND_BANDS, windAgg.map, function (k) { return k + " m/s"; });
+      var windAgg = A.crossAgg(rows, function (o) { return A.windBand(o.wind && o.wind.eff_speed); }, mode);
+      html += simpleCrossTable("実効風速帯別", "実効風速 = 風速 × バンクβ（m/s）", "風", A.WIND_BANDS, windAgg.map, function (k) { return k + " m/s"; }, windAgg.mapE);
 
-      var linesAgg = A.simpleCross(rows, function (o) { return A.linesKey(o.num_lines); });
-      html += simpleCrossTable("ライン数別", "各行: レース数 / 的中率 / 回収率", "ライン", linesAgg.order.slice().sort(), linesAgg.map, function (k) { return k + "分戦"; });
+      var linesAgg = A.crossAgg(rows, function (o) { return A.linesKey(o.num_lines); }, mode);
+      html += simpleCrossTable("ライン数別", "各行: レース数 / 的中率 / 回収率", "ライン", linesAgg.order.slice().sort(), linesAgg.map, function (k) { return k + "分戦"; }, linesAgg.mapE);
 
-      var carsAgg = A.simpleCross(rows, function (o) { return Array.isArray(o.players) ? String(o.players.length) : null; });
-      html += simpleCrossTable("車立て別", "players件数（車番総数）", "車立て", carsAgg.order.slice().sort(), carsAgg.map, function (k) { return k + "車立て"; });
+      var carsAgg = A.crossAgg(rows, function (o) { return Array.isArray(o.players) ? String(o.players.length) : null; }, mode);
+      html += simpleCrossTable("車立て別", "players件数（車番総数）", "車立て", carsAgg.order.slice().sort(), carsAgg.map, function (k) { return k + "車立て"; }, carsAgg.mapE);
+
+      var tierAgg = A.crossAgg(rows, function (o) { return o.tier; }, mode);
+      html += simpleCrossTable("ティア別", "A/B/Cティア", "ティア", A.TIERS, tierAgg.map, null, tierAgg.mapE);
+
+      var lenAgg = A.crossAgg(rows, function (o) { var b = A.bankFor(o.venue_name); return b ? A.lengthBand(b.length) : null; }, mode);
+      html += simpleCrossTable("周回長別", "バンク情報なしの場はNR（表に出ません）", "周回長(m)", lenAgg.order.slice().sort(function (a, b) { return a - b; }), lenAgg.map, null, lenAgg.mapE);
+
+      var strAgg = A.crossAgg(rows, function (o) { var b = A.bankFor(o.venue_name); return b ? A.straightBand(b.straight) : null; }, mode);
+      html += simpleCrossTable("直線長別", "バンク情報なしの場はNR（表に出ません）", "直線長(m)", ["<52", "52-56", "56-60", "60+"], strAgg.map, null, strAgg.mapE);
+
+      var cantoAgg = A.crossAgg(rows, function (o) { var b = A.bankFor(o.venue_name); return b ? A.cantoBand(b.canto) : null; }, mode);
+      html += simpleCrossTable("カント角別", "バンク情報なしの場はNR（表に出ません）", "カント角(度)", ["<31", "31-32", "32-33", "33+"], cantoAgg.map, null, cantoAgg.mapE);
+
+      var s1Agg = A.crossAgg(rows, function (o) { return A.s1Style(o); }, mode);
+      html += simpleCrossTable("s1脚質別", "labelToCar.s1の車番のplayers[].style", "脚質", s1Agg.order.slice(), s1Agg.map, null, s1Agg.mapE);
 
       var kimariteAgg = A.simpleCross(rows, function (o) { return o.kimarite; });
       html += simpleCrossTable("決まり手別", "着1着を獲った決まり手", "決まり手", kimariteAgg.order.slice(), kimariteAgg.map);
@@ -1053,7 +1217,10 @@
         html += "<tr class='" + (r.n < 10 ? "sparse" : "") + "'><td>" + esc(r.venue_name) + "</td>" +
           "<td class='num'>" + r.n + "</td><td class='num'>" + r.hits + "</td>" +
           "<td class='num'>" + fmtPct(r.hitRate) + "</td>" +
-          "<td class='num " + recClass(r.recRate) + "'>" + fmtPct(r.recRate) + "</td></tr>";
+          "<td class='num " + recClass(r.recRate) + "'>" + fmtPct(r.recRate) + "</td>" +
+          "<td class='num'>" + (r.expRate === null ? "—" : fmtPct(r.expRate)) + "</td>" +
+          "<td class='num'>" + (r.judge === null ? "—" : esc(r.judge) + "（n=" + r.nE + "）") + "</td>" +
+          "<td class='num'>" + (r.diff === null ? "—" : r.diff.toFixed(3)) + "</td></tr>";
       });
       document.getElementById("venue-tbody").innerHTML = html;
     }
@@ -1211,6 +1378,12 @@
       var rows = A.filterRows(STATE.records, A.LIVE_FROM, false, skippedCounter);
       STATE.skippedCount = skippedCounter.n;
       document.getElementById("app").innerHTML = shellHtml();
+      document.querySelectorAll(".mode-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          STATE.mode = btn.getAttribute("data-mode");
+          renderAll();
+        });
+      });
       document.querySelectorAll("#tabbar .tab-btn").forEach(function (btn) {
         btn.addEventListener("click", function () {
           STATE.tab = btn.getAttribute("data-tab");
