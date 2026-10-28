@@ -517,6 +517,22 @@
       return { stake: stake, payout: payout, hit: hits > 0, bought: bought };
     }
 
+    // 買い目ごとの「買えたか」情報。ticket_probs/oddsが無い・不備な行はnull。
+    // 非nullなら o.tickets と同じ順序・長さの配列で各要素 { bought, odds, need }（need=1/的中確率）。
+    function boughtInfo(o) {
+      if (!Array.isArray(o.ticket_probs) || !Array.isArray(o.odds)) return null;
+      var out = [];
+      for (var i = 0; i < o.tickets.length; i++) {
+        var t = o.tickets[i], c = t.cars;
+        var pEntry = findByTypeCars(o.ticket_probs, t.type, c);
+        var oEntry = findByTypeCars(o.odds, t.type, c);
+        if (!pEntry || typeof pEntry.prob !== "number" || pEntry.prob <= 0) return null;
+        if (!oEntry || typeof oEntry.odds !== "number") return null;
+        out.push({ bought: (oEntry.odds * pEntry.prob) >= 1, odds: oEntry.odds, need: 1 / pEntry.prob });
+      }
+      return out;
+    }
+
     // バンク情報（周回長・直線長・カント角）。/root/oldjzirt/bankdata.json から場名キーを
     // 絵文字等を除去して生成した定数（生成スクリプト: スクラッチパッド gen_bank_consts.py）。
     var BANK_DATA = {"いわき平": {"canto": 32.91, "length": 400, "straight": 62.7}, "久留米": {"canto": 31.48, "length": 400, "straight": 50.7}, "京王閣": {"canto": 32.18, "length": 400, "straight": 51.5}, "伊東": {"canto": 34.69, "length": 333, "straight": 46.6}, "佐世保": {"canto": 31.48, "length": 400, "straight": 40.2}, "函館": {"canto": 30.61, "length": 400, "straight": 51.3}, "別府": {"canto": 33.69, "length": 400, "straight": 59.9}, "前橋": {"canto": 36.0, "length": 335, "straight": 46.7}, "取手": {"canto": 31.51, "length": 400, "straight": 54.8}, "名古屋": {"canto": 34.03, "length": 400, "straight": 58.8}, "向日町": {"canto": 30.48, "length": 400, "straight": 47.3}, "和歌山": {"canto": 32.25, "length": 400, "straight": 59.9}, "四日市": {"canto": 32.25, "length": 400, "straight": 62.4}, "大垣": {"canto": 30.62, "length": 400, "straight": 56.0}, "大宮": {"canto": 26.28, "length": 500, "straight": 66.7}, "奈良": {"canto": 33.43, "length": 333, "straight": 38.0}, "宇都宮": {"canto": 25.8, "length": 500, "straight": 63.3}, "富山": {"canto": 33.69, "length": 333, "straight": 43.0}, "小倉": {"canto": 34.03, "length": 400, "straight": 56.9}, "小松島": {"canto": 29.77, "length": 400, "straight": 55.5}, "小田原": {"canto": 35.57, "length": 333, "straight": 36.1}, "岐阜": {"canto": 32.25, "length": 400, "straight": 59.3}, "岸和田": {"canto": 30.93, "length": 400, "straight": 56.7}, "川崎": {"canto": 32.17, "length": 400, "straight": 58.0}, "平塚": {"canto": 31.48, "length": 400, "straight": 54.2}, "広島": {"canto": 32.53, "length": 400, "straight": 57.9}, "弥彦": {"canto": 32.41, "length": 400, "straight": 63.1}, "松山": {"canto": 34.03, "length": 400, "straight": 58.6}, "松戸": {"canto": 29.75, "length": 333, "straight": 38.2}, "松阪": {"canto": 34.42, "length": 400, "straight": 61.5}, "武雄": {"canto": 32.01, "length": 400, "straight": 64.4}, "熊本": {"canto": 34.26, "length": 400, "straight": 60.3}, "玉野": {"canto": 30.63, "length": 400, "straight": 47.9}, "福井": {"canto": 31.48, "length": 400, "straight": 52.8}, "立川": {"canto": 31.22, "length": 400, "straight": 58.0}, "西武園": {"canto": 29.45, "length": 400, "straight": 47.6}, "豊橋": {"canto": 33.84, "length": 400, "straight": 60.3}, "防府": {"canto": 34.69, "length": 333, "straight": 42.5}, "青森": {"canto": 32.25, "length": 400, "straight": 58.9}, "静岡": {"canto": 30.72, "length": 400, "straight": 56.4}, "高松": {"canto": 33.26, "length": 400, "straight": 54.8}, "高知": {"canto": 24.5, "length": 500, "straight": 52.0}};
@@ -870,7 +886,7 @@
     }
 
     return {
-      compute: compute, settle: settle, settleOdds: settleOdds, validRows: validRows, pct: pct, windBand: windBand, linesKey: linesKey,
+      compute: compute, settle: settle, settleOdds: settleOdds, boughtInfo: boughtInfo, validRows: validRows, pct: pct, windBand: windBand, linesKey: linesKey,
       LIVE_FROM: LIVE_FROM, NEW8_FROM: NEW8_FROM, TIERS: TIERS, GRADES: GRADES, GRADE_LABEL: GRADE_LABEL, WIND_BANDS: WIND_BANDS,
       LABELS: LABELS, NEW8_TICKETS: NEW8_TICKETS, blank: blank, accum: accum,
       ticketsFromLabelToCar: ticketsFromLabelToCar, retroTickets: retroTickets, recomputedRows: recomputedRows,
@@ -1352,15 +1368,22 @@
       });
     }
 
-    function betSummaryHtml(o, s) {
+    function betSummaryHtml(o, s, mode) {
       var f = o.finish;
-      var hitTicket = null;
+      var hitTicket = null, hitIdx = -1;
       for (var i = 0; i < o.tickets.length; i++) {
         var t = o.tickets[i], c = t.cars;
         var win = t.type === "sanrentan" ? (c[0] === f[0] && c[1] === f[1] && c[2] === f[2]) : (c[0] === f[0] && c[1] === f[1]);
-        if (win) { hitTicket = t; break; }
+        if (win) { hitTicket = t; hitIdx = i; break; }
       }
       if (!hitTicket) return "—";
+      if (mode === "odds") {
+        var bi = A.boughtInfo(o);
+        if (bi && !bi[hitIdx].bought) {
+          return "買えず " + (hitTicket.type === "sanrentan" ? "3単 " : "2単 ") + esc(hitTicket.cars.join("-")) +
+            "（" + bi[hitIdx].odds.toFixed(1) + "倍<必要" + bi[hitIdx].need.toFixed(1) + "倍）";
+        }
+      }
       return (hitTicket.type === "sanrentan" ? "3単 " : "2単 ") + esc(hitTicket.cars.join("-"));
     }
 
@@ -1375,7 +1398,7 @@
         var skippedBuy = (mode === "odds" && (sRaw === null || sRaw.bought === 0));
         var hit = skippedBuy ? false : sRaw.hit;
         if (f.hit === "y" && !hit) return false;
-        if (f.hit === "n" && hit) return false;
+        if (f.hit === "n" && (hit || skippedBuy)) return false;
         return true;
       });
       filtered.sort(function (a, b) { var x = a.date + (a.start_time || ""), y = b.date + (b.start_time || ""); return x < y ? 1 : x > y ? -1 : 0; });
@@ -1389,13 +1412,19 @@
           "<td>" + esc(A.GRADE_LABEL[o.grade] || o.grade || "") + "</td>" +
           "<td>" + esc((o.wind && o.wind.direction) || "") + " " + ((o.wind && typeof o.wind.eff_speed === "number") ? o.wind.eff_speed.toFixed(1) : "") + "</td>" +
           "<td class='num'>" + esc(o.finish.join("-")) + "</td><td>" + esc(o.kimarite || "") + "</td>" +
-          "<td>" + betSummaryHtml(o, s) + "</td>" +
+          "<td>" + betSummaryHtml(o, s, mode) + "</td>" +
           "<td class='num'>" + (skippedBuy ? "—" : (s.hit ? fmtYen(s.payout) : "—")) + "</td>" +
           "<td class='" + (skippedBuy ? "" : (s.hit ? "hit-y" : "hit-n")) + "'>" + (skippedBuy ? "見送り(買えず)" : (s.hit ? "○" : "✕")) + "</td></tr>";
-        var betsHtml = o.tickets.map(function (t) {
+        var bi = (mode === "odds") ? A.boughtInfo(o) : null;
+        var betsHtml = o.tickets.map(function (t, ti) {
           var c = t.cars;
           var win = t.type === "sanrentan" ? (c[0] === o.finish[0] && c[1] === o.finish[1] && c[2] === o.finish[2]) : (c[0] === o.finish[0] && c[1] === o.finish[1]);
-          return "<span class='bet num" + (win ? " bet-hit" : "") + "'>" + (t.type === "nisyatan" ? "2単 " : "3単 ") + esc(c.join("-")) + "</span>";
+          var info = bi ? bi[ti] : null;
+          var notBought = !!(info && !info.bought);
+          var cls = "bet num" + (win && !notBought ? " bet-hit" : "");
+          var style = notBought ? " style='opacity:.4'" : "";
+          var suffix = notBought ? (win ? " (当たり・買えず)" : " (買えず)") : "";
+          return "<span class='" + cls + "'" + style + ">" + (t.type === "nisyatan" ? "2単 " : "3単 ") + esc(c.join("-")) + suffix + "</span>";
         }).join("");
         html += "<tr class='rt-detail' id='rt-detail-k" + i + "' hidden><td colspan='10'><div class='race-detail'>" +
           "<div class='rd-row'>買い目（三連単6点＋二車単2点）:</div><div class='bet-grid'>" + betsHtml + "</div>" +
