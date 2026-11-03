@@ -663,7 +663,32 @@ export function buildFixture(data, raceId, compactDate) {
   if (sTie) warnings.push('s1_tie');
   if (bTie) warnings.push('b1_tie');
 
-  const lineInput = lines.map((l) => l.join('')).join(',');
+  // 並び予想の競り（括弧）を lineInput に反映（paste-input.js buildLineStr と同一規則）
+  const seriPairs = Array.isArray(data.lineup.seri) ? data.lineup.seri : [];
+  const usedSeriPairs = [];
+  const buildLineStr = (line) => {
+    let str = '';
+    let i = 0;
+    while (i < line.length) {
+      const pair = seriPairs.find((p) => Array.isArray(p) && p.length === 2 &&
+        line[i] === p[0] && line[i + 1] === p[1]);
+      if (pair) {
+        str += `${pair[0]}(${pair[1]})`;
+        usedSeriPairs.push(pair);
+        i += 2;
+      } else {
+        str += `${line[i]}`;
+        i += 1;
+      }
+    }
+    return str;
+  };
+  // 3人以上の括弧（長さ3以上）は paste-input.js と同様に非対応。通常表記のまま警告のみ
+  if (seriPairs.some((p) => Array.isArray(p) && p.length >= 3)) {
+    warnings.push('seri_group_unsupported');
+  }
+  const lineInput = lines.map((l) => buildLineStr(l)).join(',');
+  if (usedSeriPairs.length > 0) warnings.push('seri');
 
   return {
     fixture: {
@@ -676,6 +701,7 @@ export function buildFixture(data, raceId, compactDate) {
       players,
       radio: { s1Id: sBestNo, b1Id: bBestNo },
       wind: { speed: 0, direction: 'none' },
+      ...(usedSeriPairs.length > 0 ? { seri: usedSeriPairs } : {}),
     },
     warnings,
   };
@@ -743,12 +769,20 @@ export async function predict(oj, fixture) {
     windSpeed: effWindSpeed,
   });
   const prob = DC.computeProbabilities(seitenScores, fixture.raceType, tickets);
+  let probLine = null;
+  if (typeof DC.computeProbabilitiesLine === 'function') {
+    probLine = DC.computeProbabilitiesLine(seitenScores, fixture.raceType, tickets, lines);
+  }
   const ranked = Object.keys(seitenScores).map(Number).sort((a, b) => seitenScores[String(b)] - seitenScores[String(a)]);
 
   return {
     labelToCar,
     tickets: tickets.map((t) => ({ type: t.type, cars: t.cars })),
     ticket_probs: prob.perTicket.map((t) => ({ type: t.type, cars: t.cars, prob: Math.round(t.prob * 1e8) / 1e8 })),
+    ...(probLine ? {
+      ticket_probs_line: probLine.perTicket.map((t) => ({ type: t.type, cars: t.cars, prob: Math.round(t.prob * 1e8) / 1e8 })),
+      prob_model_line: 'line1',
+    } : {}),
     tier: tierResult.letter,
     tier_detail: tierResult.tier,
     prob_total: Math.round(prob.totalProb * 1e6) / 1e6,
@@ -857,6 +891,7 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     wind: { speed: fx.wind.speed, direction: fx.wind.direction, eff_speed: pred.eff_speed },
     num_lines: pred.num_lines,
     lines: fx.lines,
+    ...(fx.seri ? { seri: fx.seri } : {}),
     players: fx.players.map((p) => ({
       car: p.id,
       score: p.score,
@@ -876,6 +911,7 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
     ranked: pred.ranked,
     tickets: pred.tickets,
     ticket_probs: pred.ticket_probs,
+    ...(pred.ticket_probs_line ? { ticket_probs_line: pred.ticket_probs_line, prob_model_line: pred.prob_model_line } : {}),
     odds: buildOdds(pred.tickets, result.oddsTables),
     tier: pred.tier,
     tier_detail: pred.tier_detail,
