@@ -1401,7 +1401,7 @@
       if (mode === "odds") {
         var bi = A.boughtInfo(o);
         if (bi && !bi[hitIdx].bought) {
-          return "買えず " + (hitTicket.type === "sanrentan" ? "3単 " : "2単 ") + esc(hitTicket.cars.join("-")) +
+          return "取り逃し " + (hitTicket.type === "sanrentan" ? "3単 " : "2単 ") + esc(hitTicket.cars.join("-")) +
             "（" + bi[hitIdx].odds.toFixed(1) + "倍<必要" + bi[hitIdx].need.toFixed(1) + "倍）";
         }
       }
@@ -1436,7 +1436,7 @@
           "<td>" + betSummaryHtml(o, s, mode) + "</td>" +
           "<td class='num'>" + (skippedBuy ? "—" : (s.hit ? fmtYen(s.payout) : "—")) + "</td>" +
           (mode === "odds" ? "<td class='num'>" + (skippedBuy ? "見送り" : (s.bought + "点・" + fmtYen(s.stake))) + "</td>" : "") +
-          "<td class='" + (skippedBuy ? "" : (s.hit ? "hit-y" : "hit-n")) + "'>" + (skippedBuy ? "見送り(買えず)" : (s.hit ? "○" : "✕")) + "</td></tr>";
+          "<td class='" + (skippedBuy ? "" : (s.hit ? "hit-y" : "hit-n")) + "'>" + (skippedBuy ? "見送り(買う目なし)" : (s.hit ? "○" : "✕")) + "</td></tr>";
         var bi = (mode === "odds") ? A.boughtInfo(o) : null;
         var betsHtml = o.tickets.map(function (t, ti) {
           var c = t.cars;
@@ -1445,13 +1445,13 @@
           var notBought = !!(info && !info.bought);
           var cls = "bet num" + (win && !notBought ? " bet-hit" : "");
           var style = notBought ? " style='opacity:.4'" : "";
-          var suffix = notBought ? (win ? " (当たり・買えず)" : " (買えず)") : "";
+          var suffix = notBought ? (win ? " (当たり・取り逃し)" : " (見送り)") : "";
           return "<span class='" + cls + "'" + style + ">" + (t.type === "nisyatan" ? "2単 " : "3単 ") + esc(c.join("-")) + suffix + "</span>";
         }).join("");
         html += "<tr class='rt-detail' id='rt-detail-k" + i + "' hidden><td colspan='" + (mode === "odds" ? 11 : 10) + "'><div class='race-detail'>" +
           "<div class='rd-row'>買い目（三連単6点＋二車単2点）:</div><div class='bet-grid'>" + betsHtml + "</div>" +
           (skippedBuy
-            ? "<div class='rd-row'>投資 <span class='num'>—</span> ／ 払戻 <span class='num'>—</span> ／ 回収 <span class='num'>見送り(買えず)</span></div>"
+            ? "<div class='rd-row'>投資 <span class='num'>—</span> ／ 払戻 <span class='num'>—</span> ／ 回収 <span class='num'>見送り(買う目なし)</span></div>"
             : "<div class='rd-row'>投資 <span class='num'>" + fmtYen(s.stake) + "</span> ／ 払戻 <span class='num'>" + fmtYen(s.payout) + "</span> ／ 回収 <span class='num " + (pct(s.payout, s.stake) >= 100 ? "hit-y" : "hit-n") + "'>" + fmtPct(pct(s.payout, s.stake)) + "</span></div>") +
           "</div></td></tr>";
       });
