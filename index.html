@@ -926,7 +926,7 @@
     var A = LedgerAgg;
     var pct = A.pct;
 
-    var STATE = { tab: "seiseki", mode: "all", records: [], skippedCount: 0, sortVenue: { col: "n", dir: -1 }, recFilter: { date: "", venue: "", grade: "", hit: "" } };
+    var STATE = { tab: "seiseki", mode: "all", records: [], skippedCount: 0, sortVenue: { col: "n", dir: -1 }, recFilter: { date: "", venue: "", grade: "", tier: "", hit: "" } };
 
     function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
     function fmtPct(v) { return v.toFixed(1) + "%"; }
@@ -1356,13 +1356,14 @@
       html += "<select id='rf-date'><option value=''>日付:全て</option>" + dates.map(function (d) { return "<option value='" + esc(d) + "'" + (STATE.recFilter.date === d ? " selected" : "") + ">" + esc(d) + "</option>"; }).join("") + "</select>";
       html += "<select id='rf-venue'><option value=''>場:全て</option>" + venues.map(function (v) { return "<option value='" + esc(v) + "'" + (STATE.recFilter.venue === v ? " selected" : "") + ">" + esc(v) + "</option>"; }).join("") + "</select>";
       html += "<select id='rf-grade'><option value=''>級別:全て</option>" + A.GRADES.map(function (g) { return "<option value='" + g + "'" + (STATE.recFilter.grade === g ? " selected" : "") + ">" + A.GRADE_LABEL[g] + "</option>"; }).join("") + "</select>";
+      html += "<select id='rf-tier'><option value=''>ティア:全て</option>" + A.TIERS.map(function (t) { return "<option value='" + t + "'" + (STATE.recFilter.tier === t ? " selected" : "") + ">" + t + "</option>"; }).join("") + "</select>";
       html += "<select id='rf-hit'><option value=''>的中:全て</option><option value='y'" + (STATE.recFilter.hit === "y" ? " selected" : "") + ">的中のみ</option><option value='n'" + (STATE.recFilter.hit === "n" ? " selected" : "") + ">不的中のみ</option></select>";
       html += "</div>";
       if (STATE.mode === "odds") {
         html += "<p class='footnote'>オッズ加味：確定オッズが必要倍率以上の買い目だけ買った場合。買った点数はレースごとに違い、投資額・的中率・回収率の母数もそれに連動する。的中率＝買ったレースのうち1点でも当たったレースの割合。</p>";
       }
       html += "<div class='table-scroll'><table class='detail recent'><thead><tr>" +
-        "<th>日付</th><th>場</th><th>R</th><th>級別</th><th>風</th><th>確定着順</th><th>決まり手</th><th>的中券種</th><th>払戻</th>" +
+        "<th>日付</th><th>場</th><th>R</th><th>級別</th><th>ティア</th><th>風</th><th>確定着順</th><th>決まり手</th><th>的中券種</th><th>払戻</th>" +
         (STATE.mode === "odds" ? "<th>買った点／投資</th>" : "") +
         "<th>的中</th></tr></thead><tbody id='kiroku-tbody'></tbody></table></div></section>";
 
@@ -1380,7 +1381,7 @@
       document.getElementById("panel-kiroku").innerHTML = html;
       renderKirokuTbody(rows);
 
-      ["rf-date", "rf-venue", "rf-grade", "rf-hit"].forEach(function (id) {
+      ["rf-date", "rf-venue", "rf-grade", "rf-tier", "rf-hit"].forEach(function (id) {
         document.getElementById(id).addEventListener("change", function (e) {
           var key = id.slice(3);
           STATE.recFilter[key] = e.target.value;
@@ -1415,6 +1416,7 @@
         if (f.date && o.date !== f.date) return false;
         if (f.venue && (o.venue_name || o.venue) !== f.venue) return false;
         if (f.grade && o.grade !== f.grade) return false;
+        if (f.tier && o.tier !== f.tier) return false;
         var sRaw = A.modeSettle(o, mode);
         var skippedBuy = (mode === "odds" && (sRaw === null || sRaw.bought === 0));
         var hit = skippedBuy ? false : sRaw.hit;
@@ -1431,6 +1433,7 @@
         html += "<tr class='rt-row' data-rt='k" + i + "'>" +
           "<td>" + esc(o.date) + (o.retro ? " <span style='font-size:10px;color:var(--text-dim);border:1px solid var(--border);border-radius:3px;padding:0 3px'>後付</span>" : "") + "</td><td>" + esc(o.venue_name || o.venue) + "</td><td class='num'>" + o.race + "R</td>" +
           "<td>" + esc(A.GRADE_LABEL[o.grade] || o.grade || "") + "</td>" +
+          "<td>" + (A.TIERS.indexOf(o.tier) !== -1 ? tierTag(o.tier) : "") + "</td>" +
           "<td>" + esc((o.wind && o.wind.direction) || "") + " " + ((o.wind && typeof o.wind.eff_speed === "number") ? o.wind.eff_speed.toFixed(1) : "") + "</td>" +
           "<td class='num'>" + esc(o.finish.join("-")) + "</td><td>" + esc(o.kimarite || "") + "</td>" +
           "<td>" + betSummaryHtml(o, s, mode) + "</td>" +
@@ -1448,7 +1451,7 @@
           var suffix = notBought ? (win ? " (当たり・取り逃し)" : " (見送り)") : "";
           return "<span class='" + cls + "'" + style + ">" + (t.type === "nisyatan" ? "2単 " : "3単 ") + esc(c.join("-")) + suffix + "</span>";
         }).join("");
-        html += "<tr class='rt-detail' id='rt-detail-k" + i + "' hidden><td colspan='" + (mode === "odds" ? 11 : 10) + "'><div class='race-detail'>" +
+        html += "<tr class='rt-detail' id='rt-detail-k" + i + "' hidden><td colspan='" + (mode === "odds" ? 12 : 11) + "'><div class='race-detail'>" +
           "<div class='rd-row'>買い目（三連単6点＋二車単2点）:</div><div class='bet-grid'>" + betsHtml + "</div>" +
           (skippedBuy
             ? "<div class='rd-row'>投資 <span class='num'>—</span> ／ 払戻 <span class='num'>—</span> ／ 回収 <span class='num'>見送り(買う目なし)</span></div>"
