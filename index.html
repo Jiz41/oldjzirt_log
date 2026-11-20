@@ -918,6 +918,7 @@
     module.exports = LedgerAgg;
   }
 </script>
+<script src="jmod.js"></script>
 <script>
   // ===== データ取得 → 描画（ブラウザのみ） =====
   (function () {
@@ -980,14 +981,14 @@
       var html = "";
       html += "<p class='filter-note' style='width:auto'>〜" + esc(dateMinusOne(A.NEW8_FROM)) + "は新8点を後付けで当てはめた参考値、" + esc(A.NEW8_FROM) + "〜が初見です。" +
         (STATE.skippedCount > 0 ? "（再精算不能 " + STATE.skippedCount + "件は集計対象外）" : "") + "</p>";
-      html += "<div class='filter-bar'>";
+      html += "<div class='filter-bar'" + (STATE.tab === "jmod" ? " style='display:none'" : "") + ">";
       [["all", "全買い"], ["odds", "オッズ加味"]].forEach(function (m) {
         html += "<button class='tab-btn mode-btn" + (STATE.mode === m[0] ? " active" : "") + "' data-mode='" + m[0] + "' style='border:1px solid var(--border);border-radius:4px'>" + m[1] + "</button>";
       });
       html += "<span class='filter-note' style='width:auto'>オッズ加味＝確定オッズ×的中確率≧1 の買い目だけ買った場合。買える買い目が0のレースは母数に含めない。</span>";
       html += "</div>";
       html += "<div class='tabbar' id='tabbar'>";
-      [["seiseki", "成績"], ["venue", "場別・条件別"], ["kensho", "検証"], ["kiroku", "記録"]].forEach(function (t) {
+      [["seiseki", "成績"], ["venue", "場別・条件別"], ["kensho", "検証"], ["kiroku", "記録"], ["jmod", "JMOD"]].forEach(function (t) {
         html += "<button class='tab-btn" + (STATE.tab === t[0] ? " active" : "") + "' data-tab='" + t[0] + "'>" + t[1] + "</button>";
       });
       html += "</div>";
@@ -995,6 +996,7 @@
       html += "<div class='tab-panel' id='panel-venue'></div>";
       html += "<div class='tab-panel' id='panel-kensho'></div>";
       html += "<div class='tab-panel' id='panel-kiroku'></div>";
+      html += "<div class='tab-panel' id='panel-jmod'></div>";
       html += "<div class='note'>集計対象: 台帳開始日（稼働日）以降に毎晩自動取得したレース。台帳のデータは書き換えていません。〜" + esc(dateMinusOne(A.NEW8_FROM)) + "の成績は表示時に新8点へ当てはめた参考値です。<br>数値はシャドー台帳の自動集計による非公式値です。的中・回収は着順・払戻と新8点の買い目から再計算しており、記録済みの hit_bets / payout には依存していません。1レース最大800円（8点×100円）・実投票ではありません。</div>";
       return html;
     }
@@ -1485,6 +1487,9 @@
           document.querySelectorAll("#tabbar .tab-btn").forEach(function (b) { b.classList.toggle("active", b === btn); });
           document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.remove("active"); });
           document.getElementById("panel-" + STATE.tab).classList.add("active");
+          var fb = document.querySelector(".filter-bar");
+          if (fb) fb.style.display = STATE.tab === "jmod" ? "none" : "";
+          if (STATE.tab === "jmod" && typeof JmodTab !== "undefined") JmodTab.loadInto("panel-jmod");
         });
       });
       renderSeiseki(rows);
