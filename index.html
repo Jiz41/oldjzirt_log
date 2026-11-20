@@ -378,6 +378,7 @@
   <div>
     <h1 aria-label="Elder Sign's Note"><span class="brand" aria-hidden="true"><b>E</b>lder <b>S</b>ign<i>'s</i> <b>N</b>ote</span><span class="series">A Dark Chamber for Recording Sin &quot;J&quot;</span></h1>
     <p class="live-from" id="live-from"></p>
+    <p class="live-from" id="last-update"></p>
   </div>
   <button id="theme-toggle" aria-label="テーマ切替">◐</button>
 </header>
@@ -1504,6 +1505,11 @@
     }
     fetchAll().then(function (records) {
       STATE.records = records;
+      var lastCrawl = "";
+      records.forEach(function (r) { if (r.crawled_at && r.crawled_at > lastCrawl) lastCrawl = r.crawled_at; });
+      if (lastCrawl && !isNaN(new Date(lastCrawl).getTime())) {
+        document.getElementById("last-update").textContent = "台帳の最終更新: " + new Date(new Date(lastCrawl).getTime() + 9 * 3600000).toISOString().slice(0, 16).replace("T", " ") + "（日本時間・最後に取得した行の時刻）";
+      }
       var rows = A.filterRows(records, A.LIVE_FROM, false, { n: 0 });
       if (!rows.length) { document.getElementById("app").innerHTML = "<div class='loading'>稼働開始前です（精算済みのレースがまだありません）。</div>"; return; }
       renderAll();
