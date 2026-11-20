@@ -1,0 +1,62 @@
+{
+  "schema": 1,
+  "band": {
+    "basis": "試験期間 11/12〜11/18・427R",
+    "points": [
+      {
+        "key": "line1",
+        "label": "line1",
+        "pct": 1.23
+      },
+      {
+        "key": "jmod",
+        "label": "JMOD",
+        "pct": 1.44
+      },
+      {
+        "key": "market",
+        "label": "市場",
+        "pct": 1.88
+      },
+      {
+        "key": "fight",
+        "label": "戦えるライン(計算値)",
+        "pct": 2.51
+      }
+    ],
+    "note": "戦えるライン = 市場の当てやすさ ÷ 払戻率 = 1.88% ÷ 0.748 ≒ 2.51%。払戻率は10分前の全三連単オッズの 1/Σ(1/オッズ) を、試験期間422Rで平均した値(0.748。全オッズが揃わない5Rは除く)。意味: 自分の確率どおりに全部の目へ張っても資金が減らない境目。",
+    "logloss_note": "対数損失(小さいほど良い): line1 4.4017 / JMOD 4.2433 / 市場 3.9747。当てやすさ = exp(−対数損失)。"
+  },
+  "rows": [
+    {
+      "date": "2026-11-20",
+      "change": "現行8点(基準)",
+      "readability_pct": null,
+      "market_pct": 1.88,
+      "hit_race_pct": 29.51,
+      "recovery_pct": 76.46,
+      "period": "11/12〜11/18",
+      "races": 427
+    },
+    {
+      "date": "2026-11-20",
+      "change": "JMOD第一段・動的8点",
+      "readability_pct": 1.44,
+      "market_pct": 1.88,
+      "hit_race_pct": 41.22,
+      "recovery_pct": 71.8,
+      "period": "11/12〜11/18",
+      "races": 427
+    },
+    {
+      "date": "2026-11-20",
+      "change": "JMOD期待値8点(確率×10分前オッズ)",
+      "readability_pct": 1.44,
+      "market_pct": 1.88,
+      "hit_race_pct": 0.94,
+      "recovery_pct": 40.84,
+      "period": "11/12〜11/18",
+      "races": 427
+    }
+  ]
+}
