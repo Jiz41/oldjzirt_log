@@ -57,6 +57,16 @@
       "recovery_pct": 40.84,
       "period": "11/12〜11/18",
       "races": 427
+    },
+    {
+      "date": "2026-11-21",
+      "change": "市場×JMOD（仮）：混合確率 上位6点＋二車単2点（a=0.95, b=0.25。三連単だけ8点なら回収70.19%）",
+      "readability_pct": 1.9,
+      "market_pct": 1.88,
+      "hit_race_pct": 46.37,
+      "recovery_pct": 67.91,
+      "period": "11/12〜11/18",
+      "races": 427
     }
   ]
 }
