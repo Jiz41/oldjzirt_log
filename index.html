@@ -562,6 +562,25 @@
       return null;
     }
 
+    // 確認待ち候補③「◎(s1)の脚質が逃のレースは見送る」の検証用集計（ルール自体は未適用・買い目は変えない）。
+    // CAND3_FROM以降の行のみを対象に、s1脚質が「逃」/それ以外の2群でn・的中率・回収率を集計する。
+    // 2026-11-24発注分。約800R溜まったら判定するための、条件別タブの追加表。
+    var CAND3_FROM = "2026-11-24";
+    function cand3PendingAgg(rows, mode) {
+      var target = rows.filter(function (o) { return typeof o.date === "string" && o.date >= CAND3_FROM; });
+      var groups = { "逃": blank(), "それ以外": blank() };
+      var unknown = 0;
+      target.forEach(function (o) {
+        var style = s1Style(o);
+        var s = modeSettle(o, mode);
+        if (s === null || (mode === "odds" && s.bought === 0)) return;
+        if (style === "逃") accum(groups["逃"], s);
+        else if (style === null || style === undefined) unknown++;
+        else accum(groups["それ以外"], s);
+      });
+      return { groups: groups, unknown: unknown, n: target.length };
+    }
+
     // 行ごとの「想定（確率×オッズ）vs 実測」評価。ticket_probs/oddsが揃わない行はnull。
     // mode="all": 全8点を買ったとみなす。mode="odds": odds*prob>=1 の買い目のみ（settleOddsと同じ判定）。
     // 市場logloss は 競輪の控除率25%を仮定した q = 0.75/odds で近似（注記必須の仮定）。
@@ -911,7 +930,8 @@
       dailyAgg: dailyAgg, cumulativeSeries: cumulativeSeries, highlights: highlights,
       BANK_DATA: BANK_DATA, bankFor: bankFor, lengthBand: lengthBand, straightBand: straightBand,
       cantoBand: cantoBand, s1Style: s1Style, evalRow: evalRow, blankE: blankE, accumE: accumE,
-      judgeExp: judgeExp, modeSettle: modeSettle, crossAgg: crossAgg, ticketsMeasured: ticketsMeasured
+      judgeExp: judgeExp, modeSettle: modeSettle, crossAgg: crossAgg, ticketsMeasured: ticketsMeasured,
+      CAND3_FROM: CAND3_FROM, cand3PendingAgg: cand3PendingAgg
     };
   })();
 
@@ -1236,6 +1256,26 @@
       return h;
     }
 
+    // 確認待ち候補③「◎(s1)の脚質が逃のレースは見送る」の表示用セクション。ルール未適用の検証表。
+    // 対象行が0（CAND3_FROMに達していない）間は、表を壊さず待機中メッセージのみ出す。
+    function cand3PendingSectionHtml(cand3) {
+      var h = "<section><h2>③確認待ち：◎が逃／それ以外（" + esc(A.CAND3_FROM) + "以降）</h2>" +
+        "<p class='subhead'>確認待ち候補③「◎(s1)の脚質が逃のレースは見送る」の検証用。ルールは未適用（買い目・ティア判定は変えていない）。約800R溜まったら判定する。</p>";
+      if (cand3.n === 0) {
+        h += "<p class='filter-note'>" + esc(A.CAND3_FROM) + " 以降のレース待ち（0R）</p></section>";
+        return h;
+      }
+      h += "<div class='table-scroll'><table><thead><tr><th>区分</th><th>レース数</th><th>的中率</th><th>回収率</th></tr></thead><tbody>";
+      ["逃", "それ以外"].forEach(function (k) {
+        var b = cand3.groups[k];
+        h += "<tr class='" + (b.n < 10 ? "sparse" : "") + "'><td>" + esc(k) + "</td>" +
+          "<td class='num'>" + b.n + "</td><td class='num'>" + fmtPct(pct(b.hits, b.n)) + "</td>" +
+          "<td class='num " + recClass(pct(b.payout, b.stake)) + "'>" + fmtPct(pct(b.payout, b.stake)) + "</td></tr>";
+      });
+      h += "</tbody></table></div><p class='footnote'>n&lt;10の行は参考値（文字を薄く表示）です。s1脚質が取得できない行は" + cand3.unknown + "件あり、いずれの区分にも含めていません。</p></section>";
+      return h;
+    }
+
     function renderVenue(rows) {
       var html = "";
       html += "<section><h2>開催場別</h2><div class='table-scroll'><table><thead><tr>" +
@@ -1274,6 +1314,9 @@
 
       var s1Agg = A.crossAgg(rows, function (o) { return A.s1Style(o); }, mode);
       html += simpleCrossTable("s1脚質別", "labelToCar.s1の車番のplayers[].style", "脚質", s1Agg.order.slice(), s1Agg.map, null, s1Agg.mapE);
+
+      var cand3 = A.cand3PendingAgg(rows, mode);
+      html += cand3PendingSectionHtml(cand3);
 
       var kimariteAgg = A.simpleCross(rows, function (o) { return o.kimarite; });
       html += simpleCrossTable("決まり手別", "着1着を獲った決まり手", "決まり手", kimariteAgg.order.slice(), kimariteAgg.map);
