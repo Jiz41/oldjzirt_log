@@ -898,6 +898,7 @@ export async function crawlRace(oj, raceId, compactDate, meetingSeries, opts = {
       style: p.style,
       wmark: p.wmark,
       recent3: p.recent,
+      isLocal: p.isLocal,
       sCount: p._meta.sCount,
       bCount: p._meta.bCount,
       age: p._meta.age,
